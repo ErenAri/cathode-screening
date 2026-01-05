@@ -1,0 +1,86 @@
+# configs/train_cgcnn_ehull.yaml
+project:
+  name: cathode-screening
+  run_id: null
+  output_dir: .
+  artifacts_dir: data/artifacts
+  reports_dir: data/reports
+
+data:
+  dataset_name: mp_cathodes_v1
+  processed_dir: data/processed/mp
+  splits_manifest: data/splits/mp/splits_mp_cathodes_v1.json
+  target:
+    name: energy_above_hull
+    type: regression
+  aux_target:
+    enabled: false
+    name: formation_energy_per_atom
+    weight: 0.3
+
+model:
+  type: cgcnn
+  node_in_dim: 6  # 6 element features (add +1 if use_voronoi enabled)
+  node_embed_dim: 128
+  edge_rbf_bins: 41  # 41 RBF (add +2 if voronoi+angles enabled)
+  message_passing_layers: 4
+  dropout: 0.1
+  pooling: attn
+  heads:
+    predict_uncertainty: true
+    min_log_sigma: -4.0
+    max_log_sigma: 2.0  # Allow σ to vary (exp(2)≈7.4 in normalized, allows learning)
+
+loss:
+  primary:
+    name: huber
+    delta: 0.1
+  cls_weight: 0.05  # Reduced: decisions use CDF probabilities, not classifier heads
+  sigma_weight: 0.5  # INCREASED: σ must learn to correlate with |error|
+  fallback:
+    name: huber
+    delta: 0.1
+
+train:
+  device: auto
+  precision: fp32
+  batch_size: 256
+  balanced_sampling: true
+  num_workers: 0  # Disable multiprocessing on Windows (avoids spawn issues)
+  epochs: 100
+  warmup_epochs: 5  # Linear warmup to stabilize quantile regression
+  balanced_sampling_start_epoch: 6  # Disable balanced sampling first 5 epochs
+  early_stopping:
+    monitor: val_mae
+    patience: 15
+    mode: min
+  optimizer:
+    name: adamw
+    lr: 0.0001  # Conservative: 1e-4 constant for stable quantile regression
+    weight_decay: 0.0
+  scheduler:
+    type: constant  # No decay - keep 1e-4 throughout
+    milestones: [60, 80]
+    gamma: 0.1
+  grad_clip_norm: 0.5  # Tighter clipping to prevent blow-ups
+  seed: 42
+
+metrics:
+  report:
+    - mae
+    - rmse
+    - spearman
+    - topk_hit_rate
+    - ece
+  topk:
+    k_values: [10, 25, 50]
+    stable_threshold_ehull: 0.05
+    metastable_threshold_ehull: 0.10
+
+logging:
+  console: true
+  save_every_epoch: false
+  save_best_only: true
+  wandb:
+    enabled: false
+    project: cathode-screening

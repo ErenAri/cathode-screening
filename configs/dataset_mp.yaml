@@ -1,0 +1,61 @@
+# configs/dataset_mp.yaml
+project:
+  name: cathode-screening
+  run_id: null
+  output_dir: data
+
+mp:
+  api_key_env: MP_API_KEY
+  base_url: https://api.materialsproject.org/
+  timeout_sec: 60
+  max_retries: 5
+  page_size: 500
+
+dataset:
+  name: mp_cathodes_v1
+  raw_dir: data/raw/mp
+  interim_dir: data/interim/mp
+  processed_dir: data/processed/mp
+  splits_dir: data/splits/mp
+  reports_dir: data/reports/mp
+
+filters:
+  require_elements: ["Li", "O"]
+  require_any_transition_metals: ["Fe", "Mn", "Co", "Ni", "Ti", "V", "Cr"]
+  exclude_elements: ["F", "Cl", "Br", "I", "S", "Se"]
+  min_atoms: 5
+  max_atoms: 80
+  require_3d_periodic: true
+  allow_partial_occupancy: false
+
+labels:
+  required:
+    - formation_energy_per_atom
+    - energy_above_hull
+  optional:
+    - band_gap
+    - volume
+
+graph:
+  neighbor_cutoff_angstrom: 8.0
+  max_neighbors: 12
+  rbf_bins: 41
+  rbf_gamma: 10.0
+  use_voronoi_features: false  # Disabled - too slow, enable later if needed
+  use_angle_features: false    # Disabled - requires voronoi adjacency
+  cache_format: parquet
+  cache_key: cif_hash
+
+splits:
+  method: chemistry_cluster
+  train_frac: 0.70
+  val_frac: 0.15
+  test_frac: 0.15
+  random_seed: 42
+  clustering:
+    fingerprint: composition
+    n_clusters: 200
+    min_cluster_size: 50
+  leakage_checks:
+    enforce_no_shared_cif_hash: true
+    enforce_no_shared_cluster_id: true

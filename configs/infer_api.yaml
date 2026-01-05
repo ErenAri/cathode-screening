@@ -1,0 +1,47 @@
+# configs/infer_api.yaml
+project:
+  name: cathode-screening
+  package_dir: data/artifacts/serving
+  output_dir: data/artifacts/serving
+
+serving:
+  model_run_id: null
+  model_checkpoint_path: null
+  calibration_path: null
+  export_name: cathode_screening_mp_cgcnn
+  version: 0.1.0
+
+input:
+  allow_composition_only: true
+  allow_cif: true
+  composition_format: "Li1Ni0.8Mn0.1Co0.1O2"
+  cif_max_bytes: 500000
+
+scoring:
+  thresholds:
+    green:
+      ehull_max: 0.05
+      confidence_min: 0.65
+    yellow:
+      ehull_max: 0.15
+      confidence_min: 0.40
+    red:
+      ehull_min: 0.15
+  score_scale:
+    ehull_clip_max: 0.30
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  cors_allow_origins: ["http://localhost:3000"]
+  rate_limit:
+    enabled: true
+    requests_per_minute: 120
+  auth:
+    enabled: false
+
+outputs:
+  include_explanations: true
+  return_topk: 50
+  save_requests: true
+  requests_log_path: data/reports/api_requests.jsonl
