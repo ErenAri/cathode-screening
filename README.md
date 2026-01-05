@@ -36,6 +36,90 @@ This framework maximizes discovery rate while controlling false positives, reduc
 - 4-layer message passing network with attention pooling
 - Huber loss for robust regression under heavy-tailed error distributions
 - Conformal prediction for coverage-guaranteed prediction intervals
+- Deep ensemble (K=5) for epistemic uncertainty quantification
+
+## Quick Start
+
+### Single Model Training
+
+```bash
+python scripts/04_train.py --config configs/train_cgcnn_ehull.yaml
+```
+
+### Ensemble Training
+
+Train a K=5 deep ensemble with different random seeds:
+
+```bash
+# Train all 5 members sequentially
+python scripts/04_train_ensemble.py --config configs/train_cgcnn_ehull.yaml --k 5
+
+# Or train members in parallel (e.g., on a cluster)
+python scripts/04_train_ensemble.py --config configs/train_cgcnn_ehull.yaml --k 5 --member 0
+python scripts/04_train_ensemble.py --config configs/train_cgcnn_ehull.yaml --k 5 --member 1
+# ... etc
+```
+
+Seeds are generated deterministically: `seed_i = base_seed + i` where `base_seed` comes from the config.
+
+Outputs:
+```
+artifacts/models/<run_id>/
+├── member_0/best.pt
+├── member_1/best.pt
+├── ...
+└── ensemble_meta.json
+```
+
+### Conformal Calibration
+
+After training, calibrate the prediction intervals:
+
+```bash
+python scripts/05_calibrate_conformal.py \
+    --checkpoint artifacts/models/<run_id>/member_0/member_0/best.pt \
+    --data-config configs/train_cgcnn_ehull.yaml \
+    --alpha 0.10 \
+    --output-dir artifacts/models/<run_id>/calibration
+```
+
+### Ensemble Inference
+
+Run inference with the trained ensemble:
+
+```bash
+python scripts/07_predict_ensemble.py \
+    --ensemble-dir artifacts/models/<run_id> \
+    --data-config configs/train_cgcnn_ehull.yaml \
+    --split test \
+    --output predictions/ensemble_test.parquet
+```
+
+Output columns:
+| Column | Description |
+|--------|-------------|
+| `material_id` | Material Project ID |
+| `y_true` | Ground truth E_hull (if available) |
+| `q50` | Ensemble mean of median predictions |
+| `q10_cal`, `q90_cal` | Calibrated 80% prediction interval |
+| `epistemic_var` | Variance of q50 across ensemble members |
+| `epistemic_std` | Std dev (same units as E_hull) |
+| `aleatoric_unc` | Half-width of calibrated interval |
+| `total_unc` | Combined uncertainty |
+| `p_stable` | Averaged probability E_hull < 0.05 |
+| `decision` | KEEP / MAYBE / KILL |
+
+### Ensemble Aggregation Rules
+
+| Output | Formula |
+|--------|---------|
+| `q50` | mean(q50_k) across K members |
+| `q10_raw` | mean(q10_k) across K members |
+| `q90_raw` | mean(q90_k) across K members |
+| `q10_cal` | q10_raw - Δ_lower (conformal) |
+| `q90_cal` | q90_raw + Δ_upper (conformal) |
+| `epistemic_var` | var(q50_k) across K members |
+| `p_stable` | mean(sigmoid(logit_k)) - average probs, not logits |
 
 ## License
 
