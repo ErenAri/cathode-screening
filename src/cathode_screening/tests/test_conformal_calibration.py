@@ -381,5 +381,206 @@ class TestReferenceImplementation:
         np.testing.assert_almost_equal(params.delta_lower, -0.2, decimal=10)
 
 
+class TestGroupConditionalCalibration:
+    """Test group-conditional (per-cluster) conformal calibration."""
+    
+    def test_large_clusters_get_own_deltas(self):
+        """Verify clusters with n >= n_min get cluster-specific deltas."""
+        from cathode_screening.evaluation.conformal import (
+            fit_group_conformal_calibration,
+            apply_group_conformal_calibration,
+            GroupConformalParams,
+        )
+        
+        np.random.seed(42)
+        n_min = 50
+        
+        # Create 3 clusters with different characteristics
+        # Cluster 0: Large, low error (tight intervals work)
+        # Cluster 1: Large, high error (needs wider intervals)
+        # Cluster 2: Small (should fallback to global)
+        n0, n1, n2 = 100, 80, 20  # Cluster 2 below n_min
+        
+        # Cluster 0: tight predictions (low delta needed)
+        y0 = np.random.uniform(0, 1, n0)
+        q10_0 = y0 - 0.15
+        q90_0 = y0 + 0.15
+        
+        # Cluster 1: loose predictions (high delta needed)
+        y1 = np.random.uniform(0, 1, n1)
+        q10_1 = y1 - 0.05  # Too narrow
+        q90_1 = y1 + 0.05
+        
+        # Cluster 2: small cluster
+        y2 = np.random.uniform(0, 1, n2)
+        q10_2 = y2 - 0.10
+        q90_2 = y2 + 0.10
+        
+        # Combine
+        y_true = np.concatenate([y0, y1, y2])
+        q10 = np.concatenate([q10_0, q10_1, q10_2])
+        q90 = np.concatenate([q90_0, q90_1, q90_2])
+        cluster_ids = np.array([0] * n0 + [1] * n1 + [2] * n2)
+        
+        params = fit_group_conformal_calibration(
+            y_true, q10, q90, cluster_ids,
+            alpha=0.10, n_min=n_min
+        )
+        
+        # Check: clusters 0 and 1 should have their own deltas
+        assert "0" in params.cluster_deltas
+        assert "1" in params.cluster_deltas
+        # Cluster 2 should NOT have its own deltas (too small)
+        assert "2" not in params.cluster_deltas
+        
+        # Cluster 1 should need larger delta than cluster 0 (narrower raw intervals)
+        assert params.cluster_deltas["1"]["delta_upper"] > params.cluster_deltas["0"]["delta_upper"]
+    
+    def test_fallback_to_global(self):
+        """Verify small clusters use global deltas."""
+        from cathode_screening.evaluation.conformal import (
+            fit_group_conformal_calibration,
+            GroupConformalParams,
+        )
+        
+        np.random.seed(123)
+        n_min = 50
+        
+        # All small clusters -> all should fallback
+        n_clusters = 5
+        n_per_cluster = 20  # Below n_min
+        
+        y_true = np.random.uniform(0, 1, n_clusters * n_per_cluster)
+        q10 = y_true - 0.10
+        q90 = y_true + 0.10
+        cluster_ids = np.repeat(np.arange(n_clusters), n_per_cluster)
+        
+        params = fit_group_conformal_calibration(
+            y_true, q10, q90, cluster_ids,
+            alpha=0.10, n_min=n_min
+        )
+        
+        # No per-cluster deltas (all clusters too small)
+        assert len(params.cluster_deltas) == 0
+        
+        # But global deltas should be computed
+        assert params.global_delta_upper != 0 or params.global_delta_lower != 0
+        assert params.global_n == n_clusters * n_per_cluster
+    
+    def test_per_cluster_coverage_valid(self):
+        """Verify per-cluster calibrated coverage meets target."""
+        from cathode_screening.evaluation.conformal import (
+            fit_group_conformal_calibration,
+            apply_group_conformal_calibration,
+        )
+        
+        np.random.seed(456)
+        alpha = 0.10
+        target_coverage = 1 - alpha
+        n_min = 50
+        
+        # Create data with intentional undercoverage
+        n = 200
+        y_true = np.random.uniform(0, 1, n)
+        # Narrow intervals -> undercoverage
+        q10 = y_true - 0.03 + np.random.normal(0, 0.01, n)
+        q90 = y_true + 0.03 + np.random.normal(0, 0.01, n)
+        cluster_ids = np.repeat([0, 1], n // 2)
+        
+        params = fit_group_conformal_calibration(
+            y_true, q10, q90, cluster_ids,
+            alpha=alpha, n_min=n_min
+        )
+        
+        # Per-cluster coverage should be >= target - small tolerance
+        for cid, deltas in params.cluster_deltas.items():
+            # Finite sample -> allow 2% tolerance
+            assert deltas["calibrated_coverage"] >= target_coverage - 0.02, \
+                f"Cluster {cid} coverage {deltas['calibrated_coverage']:.3f} below target {target_coverage}"
+    
+    def test_apply_uses_correct_deltas(self):
+        """Verify apply function uses per-cluster deltas when available."""
+        from cathode_screening.evaluation.conformal import (
+            GroupConformalParams,
+            apply_group_conformal_calibration,
+        )
+        
+        # Manual params with different per-cluster deltas
+        params = GroupConformalParams(
+            alpha=0.10,
+            n_min=50,
+            timestamp="2026-01-01T00:00:00",
+            split_name="val",
+            global_delta_upper=0.10,
+            global_delta_lower=0.10,
+            global_n=100,
+            cluster_deltas={
+                "0": {"delta_upper": 0.05, "delta_lower": 0.03, "n": 60, "raw_coverage": 0.8, "calibrated_coverage": 0.9},
+                "1": {"delta_upper": 0.15, "delta_lower": 0.12, "n": 70, "raw_coverage": 0.7, "calibrated_coverage": 0.9},
+            }
+        )
+        
+        q10 = np.array([0.3, 0.3, 0.3])
+        q90 = np.array([0.7, 0.7, 0.7])
+        cluster_ids = np.array([0, 1, 2])  # 2 not in cluster_deltas -> global
+        
+        q10_cal, q90_cal, is_cluster_cal, cal_source = apply_group_conformal_calibration(q10, q90, cluster_ids, params)
+        
+        # Cluster 0: delta_lower=0.03, delta_upper=0.05
+        np.testing.assert_almost_equal(q10_cal[0], 0.3 - 0.03)
+        np.testing.assert_almost_equal(q90_cal[0], 0.7 + 0.05)
+        assert is_cluster_cal[0] == True
+        assert cal_source[0] == "cluster"
+        
+        # Cluster 1: delta_lower=0.12, delta_upper=0.15
+        np.testing.assert_almost_equal(q10_cal[1], 0.3 - 0.12)
+        np.testing.assert_almost_equal(q90_cal[1], 0.7 + 0.15)
+        assert is_cluster_cal[1] == True
+        assert cal_source[1] == "cluster"
+        
+        # Cluster 2: fallback to global (0.10, 0.10)
+        np.testing.assert_almost_equal(q10_cal[2], 0.3 - 0.10)
+        np.testing.assert_almost_equal(q90_cal[2], 0.7 + 0.10)
+        assert is_cluster_cal[2] == False
+        assert cal_source[2] == "global"
+    
+    def test_serialization_roundtrip(self):
+        """Verify params can be saved and loaded correctly."""
+        from cathode_screening.evaluation.conformal import (
+            GroupConformalParams,
+            save_group_calibration_params,
+            load_group_calibration_params,
+        )
+        import tempfile
+        
+        params = GroupConformalParams(
+            alpha=0.10,
+            n_min=50,
+            timestamp="2026-01-01T00:00:00",
+            split_name="val",
+            checkpoint_path="/path/to/model.pt",
+            global_delta_upper=0.08,
+            global_delta_lower=0.06,
+            global_n=500,
+            global_raw_coverage=0.85,
+            global_calibrated_coverage=0.91,
+            cluster_deltas={
+                "0": {"delta_upper": 0.05, "delta_lower": 0.04, "n": 100, "raw_coverage": 0.87, "calibrated_coverage": 0.92},
+                "3": {"delta_upper": 0.10, "delta_lower": 0.08, "n": 80, "raw_coverage": 0.82, "calibrated_coverage": 0.90},
+            }
+        )
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "group_params.json"
+            save_group_calibration_params(params, path)
+            loaded = load_group_calibration_params(path)
+        
+        assert loaded.alpha == params.alpha
+        assert loaded.n_min == params.n_min
+        assert loaded.global_delta_upper == params.global_delta_upper
+        assert loaded.global_delta_lower == params.global_delta_lower
+        assert loaded.cluster_deltas == params.cluster_deltas
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

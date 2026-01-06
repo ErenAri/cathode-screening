@@ -19,7 +19,8 @@ Inputs:
     - family (optional): material family label for slicing
 
 Grid search over:
-    T_keep in [0.02, 0.10] - upper bound must be <= T_keep for KEEP
+    T_keep in [0.05, 0.30] - upper bound must be <= T_keep for KEEP
+                            (denser in 0.10-0.25 range)
     T_kill in [0.08, 0.20] - lower bound must be >= T_kill for KILL
 
 Outputs:
@@ -144,8 +145,8 @@ def main():
     ap.add_argument("--output-dir", default="artifacts/policy", help="Output directory")
     
     # Grid parameters
-    ap.add_argument("--t-keep-min", type=float, default=0.02, help="T_keep grid min")
-    ap.add_argument("--t-keep-max", type=float, default=0.10, help="T_keep grid max")
+    ap.add_argument("--t-keep-min", type=float, default=0.05, help="T_keep grid min")
+    ap.add_argument("--t-keep-max", type=float, default=0.30, help="T_keep grid max")
     ap.add_argument("--t-kill-min", type=float, default=0.08, help="T_kill grid min")
     ap.add_argument("--t-kill-max", type=float, default=0.20, help="T_kill grid max")
     ap.add_argument("--n-grid", type=int, default=25, help="Grid search resolution")
@@ -216,6 +217,23 @@ def main():
           f"T_kill in [{args.t_kill_min}, {args.t_kill_max}]")
     print(f"Grid resolution: {args.n_grid}")
     
+    # Sanity check: can any samples satisfy KEEP at max threshold?
+    q90_min = q90_cal.min()
+    q90_median = np.median(q90_cal)
+    print(f"\nData stats: q90_cal min={q90_min:.4f}, median={q90_median:.4f}")
+    
+    if args.mode != "dft_followup":  # DFT mode has T_keep=0
+        n_keep_possible_at_max = (q90_cal <= args.t_keep_max).sum()
+        if n_keep_possible_at_max == 0:
+            print(f"\n*** WARNING: No samples have q90_cal <= {args.t_keep_max:.3f} ***")
+            print(f"    KEEP decisions will be impossible at all grid points!")
+            print(f"    Consider increasing --t-keep-max above {q90_min:.4f}")
+        else:
+            print(f"KEEP candidates at max threshold ({args.t_keep_max:.3f}): {n_keep_possible_at_max}")
+    
+    # Extract epistemic_std if present
+    epistemic_std = df["epistemic_std"].values if "epistemic_std" in df.columns else None
+    
     best_policy, best_report = tune_policy_thresholds(
         q10_cal=q10_cal,
         q50=q50,
@@ -224,9 +242,11 @@ def main():
         mode=args.mode,
         p_stable=p_stable,
         gate_levels=gate_levels,
+        epistemic_std=epistemic_std,
         T_keep_range=(args.t_keep_min, args.t_keep_max),
         T_kill_range=(args.t_kill_min, args.t_kill_max),
         n_grid=args.n_grid,
+        verbose=True,
     )
     
     # Setup output directory

@@ -1,0 +1,88 @@
+# configs/train_cgcnn_ehull_soap_loco.yaml
+# Training config using SOAP-LOCO splits for better generalization
+
+project:
+  name: cathode-screening-soap-loco
+  run_id: null
+  output_dir: .
+  artifacts_dir: data/artifacts/soap_loco
+  reports_dir: data/reports
+
+data:
+  dataset_name: mp_cathodes_v1
+  processed_dir: data/processed/mp
+  splits_manifest: data/splits/mp/splits_mp_cathodes_v1_soap-loco.json
+  target:
+    name: energy_above_hull
+    type: regression
+  aux_target:
+    enabled: false
+    name: formation_energy_per_atom
+    weight: 0.3
+
+model:
+  type: cgcnn
+  node_in_dim: 6
+  node_embed_dim: 128
+  edge_rbf_bins: 41
+  message_passing_layers: 4
+  dropout: 0.1
+  pooling: attn
+  heads:
+    predict_uncertainty: true
+    min_log_sigma: -4.0
+    max_log_sigma: 2.0
+
+loss:
+  primary:
+    name: huber
+    delta: 0.1
+  cls_weight: 0.05
+  sigma_weight: 0.5
+  fallback:
+    name: huber
+    delta: 0.1
+
+train:
+  device: auto
+  precision: fp32
+  batch_size: 256
+  balanced_sampling: true
+  num_workers: 0
+  epochs: 100
+  warmup_epochs: 5
+  balanced_sampling_start_epoch: 6
+  early_stopping:
+    monitor: val_mae
+    patience: 15
+    mode: min
+  optimizer:
+    name: adamw
+    lr: 0.0001
+    weight_decay: 0.0
+  scheduler:
+    type: constant
+    milestones: [60, 80]
+    gamma: 0.1
+  grad_clip_norm: 0.5
+  seed: 42
+
+metrics:
+  report:
+    - mae
+    - rmse
+    - spearman
+    - topk_hit_rate
+    - ece
+  topk:
+    k_values: [10, 25, 50]
+    stable_threshold_ehull: 0.05
+    metastable_threshold_ehull: 0.10
+
+logging:
+  console: true
+  save_every_epoch: false
+  save_best_only: true
+  wandb:
+    enabled: false
+    project: cathode-screening

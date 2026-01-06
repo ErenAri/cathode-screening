@@ -16,12 +16,17 @@ Calibration:
 Calibrated bounds:
     q90_cal = q90 + Δ_upper
     q10_cal = q10 - Δ_lower
+
+Group-Conditional Mode:
+    Per-cluster Δ_upper/Δ_lower when n_cluster >= N_min (default 50).
+    Falls back to global deltas for small clusters.
+    Storage: {cluster_id: {delta_upper, delta_lower}, "_global": {...}}
 """
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional, Union, Dict, Any, List
 
 import numpy as np
 
@@ -40,6 +45,78 @@ class ConformalCalibrationParams:
     # Diagnostics
     raw_coverage: Optional[float] = None
     calibrated_coverage: Optional[float] = None
+
+
+@dataclass
+class GroupConformalParams:
+    """
+    Group-conditional conformal calibration parameters.
+    
+    Stores per-cluster deltas with fallback to global.
+    Format: {cluster_id: {delta_upper, delta_lower, n}, "_global": {...}}
+    """
+    alpha: float
+    n_min: int  # Minimum samples for per-cluster calibration
+    timestamp: str
+    split_name: str
+    checkpoint_path: Optional[str] = None
+    
+    # Per-cluster deltas: cluster_id -> {"delta_upper", "delta_lower", "n", "coverage"}
+    cluster_deltas: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # Global fallback
+    global_delta_upper: float = 0.0
+    global_delta_lower: float = 0.0
+    global_n: int = 0
+    global_raw_coverage: Optional[float] = None
+    global_calibrated_coverage: Optional[float] = None
+    
+    def get_deltas(self, cluster_id: Optional[str] = None) -> Tuple[float, float]:
+        """Get (delta_upper, delta_lower) for a cluster, falling back to global."""
+        if cluster_id is not None and cluster_id in self.cluster_deltas:
+            d = self.cluster_deltas[cluster_id]
+            return d["delta_upper"], d["delta_lower"]
+        return self.global_delta_upper, self.global_delta_lower
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "alpha": self.alpha,
+            "n_min": self.n_min,
+            "timestamp": self.timestamp,
+            "split_name": self.split_name,
+            "checkpoint_path": self.checkpoint_path,
+            "_global": {
+                "delta_upper": self.global_delta_upper,
+                "delta_lower": self.global_delta_lower,
+                "n": self.global_n,
+                "raw_coverage": self.global_raw_coverage,
+                "calibrated_coverage": self.global_calibrated_coverage,
+            },
+            **{k: v for k, v in self.cluster_deltas.items()}
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GroupConformalParams":
+        """Load from dictionary."""
+        global_data = data.pop("_global", {})
+        cluster_deltas = {
+            k: v for k, v in data.items() 
+            if k not in ("alpha", "n_min", "timestamp", "split_name", "checkpoint_path")
+        }
+        return cls(
+            alpha=data["alpha"],
+            n_min=data["n_min"],
+            timestamp=data["timestamp"],
+            split_name=data["split_name"],
+            checkpoint_path=data.get("checkpoint_path"),
+            cluster_deltas=cluster_deltas,
+            global_delta_upper=global_data.get("delta_upper", 0.0),
+            global_delta_lower=global_data.get("delta_lower", 0.0),
+            global_n=global_data.get("n", 0),
+            global_raw_coverage=global_data.get("raw_coverage"),
+            global_calibrated_coverage=global_data.get("calibrated_coverage"),
+        )
 
 
 def compute_conformal_quantile(scores: np.ndarray, alpha: float) -> float:
@@ -122,6 +199,97 @@ def fit_conformal_calibration(
     )
 
 
+def fit_group_conformal_calibration(
+    y_true: np.ndarray,
+    q10: np.ndarray,
+    q90: np.ndarray,
+    cluster_ids: np.ndarray,
+    alpha: float = 0.10,
+    n_min: int = 50,
+    split_name: str = "val",
+    checkpoint_path: Optional[str] = None
+) -> GroupConformalParams:
+    """
+    Fit group-conditional conformal calibration with per-cluster deltas.
+    
+    For each cluster with n >= n_min samples, computes cluster-specific
+    Δ_upper and Δ_lower. Smaller clusters fall back to global deltas.
+    
+    Args:
+        y_true: [N] ground truth values
+        q10: [N] lower quantile predictions
+        q90: [N] upper quantile predictions
+        cluster_ids: [N] cluster labels for each sample
+        alpha: Target miscoverage rate (default 0.10 for 90% coverage)
+        n_min: Minimum samples for per-cluster calibration (default 50)
+        split_name: Name of the calibration split
+        checkpoint_path: Path to model checkpoint
+    
+    Returns:
+        GroupConformalParams with per-cluster and global deltas
+    """
+    n = len(y_true)
+    assert len(q10) == n and len(q90) == n and len(cluster_ids) == n
+    
+    # Compute nonconformity scores
+    s_upper = y_true - q90
+    s_lower = q10 - y_true
+    alpha_per_tail = alpha / 2
+    
+    # Global calibration (always computed as fallback)
+    global_delta_upper = compute_conformal_quantile(s_upper, alpha_per_tail)
+    global_delta_lower = compute_conformal_quantile(s_lower, alpha_per_tail)
+    
+    global_raw_coverage = float(np.mean((y_true >= q10) & (y_true <= q90)))
+    q10_cal_global = q10 - global_delta_lower
+    q90_cal_global = q90 + global_delta_upper
+    global_calibrated_coverage = float(np.mean(
+        (y_true >= q10_cal_global) & (y_true <= q90_cal_global)
+    ))
+    
+    # Per-cluster calibration
+    cluster_deltas = {}
+    unique_clusters = np.unique(cluster_ids)
+    
+    for cid in unique_clusters:
+        mask = cluster_ids == cid
+        n_cluster = mask.sum()
+        
+        if n_cluster >= n_min:
+            # Compute cluster-specific deltas
+            d_upper = compute_conformal_quantile(s_upper[mask], alpha_per_tail)
+            d_lower = compute_conformal_quantile(s_lower[mask], alpha_per_tail)
+            
+            # Cluster coverage diagnostics
+            y_c, q10_c, q90_c = y_true[mask], q10[mask], q90[mask]
+            raw_cov = float(np.mean((y_c >= q10_c) & (y_c <= q90_c)))
+            cal_cov = float(np.mean(
+                (y_c >= q10_c - d_lower) & (y_c <= q90_c + d_upper)
+            ))
+            
+            cluster_deltas[str(cid)] = {
+                "delta_upper": float(d_upper),
+                "delta_lower": float(d_lower),
+                "n": int(n_cluster),
+                "raw_coverage": raw_cov,
+                "calibrated_coverage": cal_cov,
+            }
+    
+    return GroupConformalParams(
+        alpha=alpha,
+        n_min=n_min,
+        timestamp=datetime.now().isoformat(),
+        split_name=split_name,
+        checkpoint_path=checkpoint_path,
+        cluster_deltas=cluster_deltas,
+        global_delta_upper=float(global_delta_upper),
+        global_delta_lower=float(global_delta_lower),
+        global_n=n,
+        global_raw_coverage=global_raw_coverage,
+        global_calibrated_coverage=global_calibrated_coverage,
+    )
+
+
 def apply_conformal_calibration(
     q10: np.ndarray,
     q90: np.ndarray,
@@ -144,6 +312,52 @@ def apply_conformal_calibration(
     return q10_cal, q90_cal
 
 
+def apply_group_conformal_calibration(
+    q10: np.ndarray,
+    q90: np.ndarray,
+    cluster_ids: np.ndarray,
+    params: GroupConformalParams
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[str]]:
+    """
+    Apply group-conditional conformal calibration.
+    
+    Uses per-cluster deltas when available, falling back to global.
+    
+    Args:
+        q10: [N] lower quantile predictions
+        q90: [N] upper quantile predictions
+        cluster_ids: [N] cluster labels for each sample
+        params: Group calibration parameters
+    
+    Returns:
+        q10_cal: [N] calibrated lower bounds
+        q90_cal: [N] calibrated upper bounds
+        is_cluster_calibrated: [N] bool array, True if per-cluster delta used
+        calibrated_source: [N] list of "cluster" or "global"
+    """
+    n = len(q10)
+    q10_cal = np.zeros(n)
+    q90_cal = np.zeros(n)
+    is_cluster_calibrated = np.zeros(n, dtype=bool)
+    calibrated_source: List[str] = []
+    
+    for i in range(n):
+        cid = str(cluster_ids[i])
+        if cid in params.cluster_deltas:
+            d = params.cluster_deltas[cid]
+            d_upper, d_lower = d["delta_upper"], d["delta_lower"]
+            is_cluster_calibrated[i] = True
+            calibrated_source.append("cluster")
+        else:
+            d_upper, d_lower = params.global_delta_upper, params.global_delta_lower
+            is_cluster_calibrated[i] = False
+            calibrated_source.append("global")
+        q10_cal[i] = q10[i] - d_lower
+        q90_cal[i] = q90[i] + d_upper
+    
+    return q10_cal, q90_cal, is_cluster_calibrated, calibrated_source
+
+
 def save_calibration_params(params: ConformalCalibrationParams, path: Union[str, Path]) -> None:
     """Save calibration parameters to JSON file."""
     path = Path(path)
@@ -152,11 +366,26 @@ def save_calibration_params(params: ConformalCalibrationParams, path: Union[str,
         json.dump(asdict(params), f, indent=2)
 
 
+def save_group_calibration_params(params: GroupConformalParams, path: Union[str, Path]) -> None:
+    """Save group calibration parameters to JSON file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(params.to_dict(), f, indent=2)
+
+
 def load_calibration_params(path: Union[str, Path]) -> ConformalCalibrationParams:
     """Load calibration parameters from JSON file."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return ConformalCalibrationParams(**data)
+
+
+def load_group_calibration_params(path: Union[str, Path]) -> GroupConformalParams:
+    """Load group calibration parameters from JSON file."""
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return GroupConformalParams.from_dict(data)
 
 
 class ConformalCalibrator:

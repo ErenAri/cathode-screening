@@ -52,8 +52,11 @@ from cathode_screening.inference.decision_policy import (
 from evaluate_policy_helpers import (
     compute_enrichment_factor,
     compute_recall_at_budget,
+    compute_multi_threshold_metrics,
     get_ehull_bin,
     derive_gate_level_from_score,
+    STABILITY_THRESHOLDS,
+    MultiThresholdReport,
 )
 
 
@@ -73,7 +76,7 @@ class PolicyEvaluationReport:
     n_maybe: int  
     n_kill: int
     
-    # Core rates
+    # Core rates (at default threshold 0.05)
     false_keep_rate: float     # P(KEEP | unstable) - false positives
     false_kill_rate: float     # P(KILL | stable) - false negatives (missed)
     recall_stable: float       # P(KEEP | stable) = 1 - false_kill_rate
@@ -84,19 +87,26 @@ class PolicyEvaluationReport:
     kill_coverage: float       # fraction of samples in KILL
     maybe_coverage: float      # fraction in MAYBE (need review)
     
-    # Enrichment factors
+    # Enrichment factors (at default threshold 0.05)
     ef_at_1pct: float         # EF@1% of dataset
     ef_at_5pct: float         # EF@5% of dataset
     
-    # Recall at budget
+    # Recall at budget (at default threshold 0.05)
     recall_at_budget: Dict[int, float]  # budget -> recall
     
+    # Multi-threshold metrics (EF and Recall at 0.01, 0.02, 0.05, 0.10)
+    multi_threshold: Optional[MultiThresholdReport] = None
+    
     # Cost metrics
-    expected_cost: float
-    cost_per_sample: float
+    expected_cost: float = 0.0
+    cost_per_sample: float = 0.0
     
     def to_dict(self) -> Dict:
-        return asdict(self)
+        d = asdict(self)
+        # Handle MultiThresholdReport serialization
+        if self.multi_threshold is not None:
+            d["multi_threshold"] = self.multi_threshold.to_dict()
+        return d
 
 
 def evaluate_policy_detailed(
@@ -128,9 +138,10 @@ def evaluate_policy_detailed(
     
     p_stable = df["p_stable"].values if "p_stable" in df.columns else None
     gate_levels = df["gate_level"].values if "gate_level" in df.columns else None
+    epistemic_std = df["epistemic_std"].values if "epistemic_std" in df.columns else None
     
-    # Get decisions
-    decisions = policy.decide_batch(q10_cal, q50, q90_cal, p_stable, gate_levels)
+    # Get decisions (now uses epistemic_std for KILL safety)
+    decisions = policy.decide_batch(q10_cal, q50, q90_cal, p_stable, gate_levels, epistemic_std)
     
     # Ground truth
     is_stable = y_true < THRESH_STABLE
@@ -158,13 +169,25 @@ def evaluate_policy_detailed(
     kill_coverage = n_kill / n_total
     maybe_coverage = n_maybe / n_total
     
-    # Enrichment factors
-    ef_at_1pct = compute_enrichment_factor(y_true, q90_cal, 0.01)
-    ef_at_5pct = compute_enrichment_factor(y_true, q90_cal, 0.05)
+    # Compute ranking scores: q50 + λ * epistemic_std
+    # This ranks by predicted E_hull with uncertainty penalty
+    # Lower score = higher priority in DFT queue
+    ranking_scores = policy.compute_ranking_scores(q50, epistemic_std)
     
-    # Recall at budget
+    # Enrichment factors (rank by ranking_score, NOT q90_cal)
+    # q90_cal measures interval width, ranking_score measures expected stability
+    ef_at_1pct = compute_enrichment_factor(y_true, ranking_scores, 0.01)
+    ef_at_5pct = compute_enrichment_factor(y_true, ranking_scores, 0.05)
+
+    # Recall at budget (rank MAYBEs by ranking_score for prioritization)
     recall_at_budget = compute_recall_at_budget(
-        y_true, decisions, q90_cal, budgets
+        y_true, decisions, ranking_scores, budgets
+    )
+    
+    # Multi-threshold metrics: EF and Recall at different stringency levels
+    # This addresses the issue where EF≈1.0 when base rate is high
+    multi_thresh = compute_multi_threshold_metrics(
+        y_true, ranking_scores, decisions
     )
     
     # Cost
@@ -187,6 +210,7 @@ def evaluate_policy_detailed(
         ef_at_1pct=float(ef_at_1pct),
         ef_at_5pct=float(ef_at_5pct),
         recall_at_budget=recall_at_budget,
+        multi_threshold=multi_thresh,
         expected_cost=float(expected_cost),
         cost_per_sample=float(expected_cost / n_total),
     )
@@ -321,13 +345,17 @@ def main():
     print(f"  Recall (stable materials):  {main_report.recall_stable:.2%}")
     print(f"  Precision (KEEP decisions): {main_report.precision_keep:.2%}")
     
-    print(f"\nEnrichment Factors (ranking by q90_cal):")
+    print(f"\nEnrichment Factors (ranking by q50 point estimate, threshold=0.05):")
     print(f"  EF@1%: {main_report.ef_at_1pct:.2f}")
     print(f"  EF@5%: {main_report.ef_at_5pct:.2f}")
     
-    print(f"\nRecall at Budget:")
+    print(f"\nRecall at Budget (threshold=0.05):")
     for budget, recall in sorted(main_report.recall_at_budget.items()):
         print(f"  Budget {budget:4d}: recall = {recall:.2%}")
+    
+    # Print multi-threshold metrics table
+    if main_report.multi_threshold is not None:
+        main_report.multi_threshold.print_table()
     
     print(f"\nCost:")
     print(f"  Expected cost: {main_report.expected_cost:.2f}")

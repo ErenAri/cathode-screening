@@ -112,6 +112,13 @@ def main():
     parser.add_argument("--train-frac", type=float, default=0.70)
     parser.add_argument("--val-frac", type=float, default=0.15)
     parser.add_argument("--n-clusters", type=int, default=50)
+    parser.add_argument(
+        "--split-strategy", 
+        type=str, 
+        choices=["composition", "soap-loco"],
+        default="composition",
+        help="Splitting strategy: 'composition' (element fractions) or 'soap-loco' (structural similarity)"
+    )
     args = parser.parse_args()
     
     cfg = load_cfg(args.config)
@@ -126,23 +133,84 @@ def main():
     df = pd.read_parquet(parquet_path)
     print(f"  Loaded {len(df)} materials")
     
-    # Create splits
-    splits = make_cluster_splits(
-        df, 
-        seed=seed, 
-        train_frac=args.train_frac,
-        val_frac=args.val_frac,
-        n_clusters=args.n_clusters
-    )
+    # Create splits based on strategy
+    if args.split_strategy == "composition":
+        print("\nUsing COMPOSITION-based clustering strategy...")
+        splits = make_cluster_splits(
+            df, 
+            seed=seed, 
+            train_frac=args.train_frac,
+            val_frac=args.val_frac,
+            n_clusters=args.n_clusters
+        )
+    elif args.split_strategy == "soap-loco":
+        print("\nUsing SOAP-LOCO (structural similarity) strategy...")
+        try:
+            from cathode_screening.datasets.splits.soap_loco import (
+                soap_loco_split, 
+                check_dscribe_available
+            )
+        except ImportError:
+            print("ERROR: Could not import SOAP-LOCO module.")
+            print("Make sure cathode_screening is installed.")
+            return
+        
+        if not check_dscribe_available():
+            print("ERROR: dscribe is required for SOAP-LOCO splitting.")
+            print("Install with: pip install dscribe")
+            return
+        
+        # Load structures from CIF cache
+        from pymatgen.core import Structure
+        cif_cache_dir = processed_dir / "cif_cache"
+        
+        if not cif_cache_dir.exists():
+            print(f"ERROR: CIF cache not found at {cif_cache_dir}")
+            print("Run 02_build_graph_cache.py first to generate CIF files.")
+            return
+        
+        structures = []
+        valid_indices = []
+        for i, row in df.iterrows():
+            cif_path = cif_cache_dir / f"{row['material_id']}.cif"
+            if cif_path.exists():
+                try:
+                    struct = Structure.from_file(str(cif_path))
+                    structures.append(struct)
+                    valid_indices.append(i)
+                except Exception as e:
+                    print(f"  Warning: Could not load {cif_path}: {e}")
+        
+        if len(structures) < len(df):
+            print(f"  Warning: Only {len(structures)}/{len(df)} structures loaded")
+            df = df.iloc[valid_indices].reset_index(drop=True)
+        
+        splits = soap_loco_split(
+            df,
+            structures,
+            n_clusters=args.n_clusters,
+            train_frac=args.train_frac,
+            val_frac=args.val_frac,
+            seed=seed,
+        )
+    else:
+        raise ValueError(f"Unknown split strategy: {args.split_strategy}")
     
     # Save splits manifest
     splits_path = Path(cfg["data"]["splits_manifest"])
+    
+    # Append strategy to filename if not composition
+    if args.split_strategy != "composition":
+        splits_path = splits_path.with_name(
+            splits_path.stem + f"_{args.split_strategy}" + splits_path.suffix
+        )
+    
     splits_path.parent.mkdir(parents=True, exist_ok=True)
     
     with open(splits_path, "w", encoding="utf-8") as f:
         json.dump(splits, f, indent=2)
     
-    print(f"Saved splits to {splits_path}")
+    print(f"\nSaved splits to {splits_path}")
     
     # Print class balance stats
     target_col = cfg["data"]["target"]["name"]
@@ -158,3 +226,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

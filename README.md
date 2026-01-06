@@ -38,6 +38,40 @@ This framework maximizes discovery rate while controlling false positives, reduc
 - Conformal prediction for coverage-guaranteed prediction intervals
 - Deep ensemble (K=5) for epistemic uncertainty quantification
 
+## Data Splitting Strategies
+
+Two strategies are available for creating train/val/test splits:
+
+### Composition Clustering (Default)
+
+Clusters materials by element fraction vector, ensuring test set contains novel chemistries.
+
+```bash
+python scripts/03_make_splits.py --config configs/train_cgcnn_ehull.yaml
+```
+
+### SOAP-LOCO (Structural Similarity)
+
+Uses SOAP (Smooth Overlap of Atomic Positions) descriptors to cluster by structural similarity. This is more rigorous for preventing information leakage between structurally similar polymorphs.
+
+```bash
+# Requires: pip install dscribe
+python scripts/03_make_splits.py --config configs/train_cgcnn_ehull.yaml --split-strategy soap-loco
+```
+
+SOAP-LOCO produces test sets with higher structural novelty, better simulating real discovery scenarios.
+
+## Evaluation Metrics
+
+Beyond standard MAE/RMSE, the system tracks decision-grade metrics:
+
+| Metric | Description |
+|--------|-------------|
+| **Enrichment Factor (EF@k%)** | How much better than random at finding stable materials in top k% |
+| **Discovery Acceleration Factor (DAF)** | Speedup vs random to find N stable materials |
+| **Recall@k** | Fraction of stable materials found in top k predictions |
+| **ECE / MACE** | Calibration error for p_stable predictions |
+
 ## Quick Start
 
 ### Single Model Training
