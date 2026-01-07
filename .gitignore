@@ -78,3 +78,16 @@ htmlcov/
 # Secrets and credentials
 *.pem
 *.key
+
+# ALIGNN format data (POSCAR files)
+data/alignn_format/
+
+# Model predictions
+data/predictions/
+*.parquet
+
+# Model artifacts
+artifacts/
+
+# DGL cache
+.dgl/
