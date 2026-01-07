@@ -170,7 +170,7 @@ async def get_database(api_key: str = Security(get_api_key)):
                 "p_stable": round(float(p_stable), 3),
                 "uncertainty": unc,
                 "action": action,
-                confidence_interval=(0.0, 0.0) # Placeholder if needed
+                "confidence_interval": (0.0, 0.0) # Placeholder if needed
             })
         
         return {"success": True, "data": data, "total": len(df)}
