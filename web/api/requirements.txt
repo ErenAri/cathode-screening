@@ -4,3 +4,4 @@ python-multipart>=0.0.6
 pydantic>=2.0.0
 pymatgen>=2024.1.0
 torch>=2.0.0
+pyarrow>=14.0.0
