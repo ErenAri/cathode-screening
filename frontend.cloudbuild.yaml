@@ -1,0 +1,7 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [ 'build', '-t', 'gcr.io/$PROJECT_ID/cathode-frontend', '--build-arg', 'NEXT_PUBLIC_API_URL=$_BACKEND_URL', '-f', 'frontend.Dockerfile', '.' ]
+images:
+- 'gcr.io/$PROJECT_ID/cathode-frontend'
+substitutions:
+  _BACKEND_URL: 'http://localhost:8080'

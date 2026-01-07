@@ -2,7 +2,7 @@
 # Usage: .\deploy_gcp.ps1 -ProjectId YOUR_PROJECT_ID
 
 param (
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$ProjectId,
     
     [string]$Region = "us-central1"
@@ -32,8 +32,12 @@ gcloud config set project $ProjectId
 
 # 3. Deploy Backend
 Write-Step "Building & Deploying Backend (Cloud Run)"
-# We use 'gcloud builds submit' to build in the cloud (no local Docker required)
-gcloud builds submit --tag "gcr.io/$ProjectId/cathode-backend" -f backend.Dockerfile .
+Write-Host "NOTE: If prompted to enable APIs (run.googleapis.com, cloudbuild.googleapis.com), please press 'y' and Enter." -ForegroundColor Yellow
+
+# Build using cloudbuild.yaml to support custom Dockerfile
+gcloud builds submit --config backend.cloudbuild.yaml .
+
+if ($LASTEXITCODE -ne 0) { Write-Error "Backend build failed." }
 
 gcloud run deploy cathode-backend `
     --image "gcr.io/$ProjectId/cathode-backend" `
@@ -51,10 +55,12 @@ Write-Host "Backend is live at: $BackendUrl" -ForegroundColor Green
 
 # 4. Deploy Frontend
 Write-Step "Building & Deploying Frontend (Cloud Run)"
-# We pass the Backend URL as a build arg or env var (Next.js needs it at build time for static generation or runtime)
-# For 'standalone' output, runtime env var is better.
+Write-Host "Injecting Backend URL: $BackendUrl"
 
-gcloud builds submit --tag "gcr.io/$ProjectId/cathode-frontend" -f frontend.Dockerfile .
+# Build with backend URL substitution
+gcloud builds submit --config frontend.cloudbuild.yaml --substitutions="_BACKEND_URL=$BackendUrl" .
+
+if ($LASTEXITCODE -ne 0) { Write-Error "Frontend build failed." }
 
 gcloud run deploy cathode-frontend `
     --image "gcr.io/$ProjectId/cathode-frontend" `
@@ -62,7 +68,6 @@ gcloud run deploy cathode-frontend `
     --region $Region `
     --allow-unauthenticated `
     --port 3000 `
-    --set-env-vars "NEXT_PUBLIC_API_URL=$BackendUrl" `
     --memory 1Gi
 
 if ($LASTEXITCODE -ne 0) { Write-Error "Frontend deployment failed." }
