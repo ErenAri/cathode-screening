@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import API_BASE_URL from "@/config";
 
 interface PredictionResult {
   material_id: string;
@@ -66,7 +67,7 @@ export default function Home() {
             <a href="#results" className="text-gray-600 hover:text-gray-900">Results</a>
             <a href="/database" className="text-gray-600 hover:text-gray-900">Database</a>
             <a href="/about" className="text-gray-600 hover:text-gray-900">About</a>
-            <a href="http://localhost:8001/docs" target="_blank" className="text-gray-600 hover:text-gray-900">API</a>
+            <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-gray-600 hover:text-gray-900">API</a>
           </nav>
         </div>
       </header>
@@ -265,9 +266,9 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 text-center">
           <p className="text-gray-500 mb-4">CathodeScreen · Open Source Research Tool · 2026</p>
           <div className="flex justify-center gap-6 text-sm text-gray-600">
-            <a href="#" className="hover:text-blue-600">GitHub</a>
+            <a href="https://github.com/ErenAri" target="_blank" className="hover:text-blue-600">GitHub</a>
             <a href="/about" className="hover:text-blue-600">About</a>
-            <a href="http://localhost:8001/docs" className="hover:text-blue-600">API Documentation</a>
+            <a href={`${API_BASE_URL}/docs`} className="hover:text-blue-600">API Documentation</a>
           </div>
         </div>
       </footer>

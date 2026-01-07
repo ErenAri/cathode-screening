@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import API_BASE_URL from "@/config";
 
 interface MaterialPrediction {
     material_id: string;
@@ -90,7 +91,7 @@ export default function Database() {
                         <Link href="/" className="text-gray-600 hover:text-gray-900">Predict</Link>
                         <Link href="/database" className="text-blue-600 font-medium">Database</Link>
                         <Link href="/about" className="text-gray-600 hover:text-gray-900">About</Link>
-                        <a href="http://localhost:8001/docs" target="_blank" className="text-gray-600 hover:text-gray-900">API</a>
+                        <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-gray-600 hover:text-gray-900">API</a>
                     </nav>
                 </div>
             </header>
@@ -235,8 +236,8 @@ export default function Database() {
                 <div className="max-w-5xl mx-auto px-6 py-6 flex justify-between text-sm text-gray-500">
                     <p>CathodeScreen · Open source research tool</p>
                     <div className="flex gap-4">
-                        <a href="#" className="hover:text-gray-900">GitHub</a>
-                        <a href="http://localhost:8001/docs" target="_blank" className="hover:text-gray-900">API</a>
+                        <a href="https://github.com/ErenAri" target="_blank" className="hover:text-gray-900">GitHub</a>
+                        <a href={`${API_BASE_URL}/docs`} target="_blank" className="hover:text-gray-900">API</a>
                         <Link href="/about" className="hover:text-gray-900">About</Link>
                     </div>
                 </div>
