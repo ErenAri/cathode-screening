@@ -178,53 +178,27 @@ async def predict_structure(cif_file: UploadFile = File(...)):
         content = await cif_file.read()
         cif_text = content.decode("utf-8")
         
-        # Try to use real model
-        try:
-            from pymatgen.core import Structure
-            from .inference import get_predictor
-            
-            # Parse structure
-            structure = Structure.from_str(cif_text, fmt="cif")
-            
-            # Run real prediction
-            predictor = get_predictor()
-            result = predictor.predict_structure(structure)
-            
-            return PredictionResponse(
-                success=True,
-                prediction=PredictionResult(
-                    material_id=cif_file.filename or "uploaded",
-                    pred_ehull=round(result["pred_ehull"], 4),
-                    p_stable=round(result["p_stable"], 3),
-                    uncertainty=result["uncertainty"],
-                    action=result["action"],
-                    confidence_interval=result["confidence_interval"],
-                ),
-            )
-        except ImportError as e:
-            # Fallback to mock if dependencies missing
-            import random
-            pred_ehull = random.uniform(0, 0.3)
-            std = random.uniform(0.02, 0.15)
-            p_stable = max(0, min(1, 1 - pred_ehull * 5 + random.uniform(-0.1, 0.1)))
-            
-            unc = classify_uncertainty(std)
-            action = get_action(p_stable, unc, pred_ehull)
-            
-            return PredictionResponse(
-                success=True,
-                prediction=PredictionResult(
-                    material_id=cif_file.filename or "uploaded",
-                    pred_ehull=round(pred_ehull, 4),
-                    p_stable=round(p_stable, 3),
-                    uncertainty=unc,
-                    action=action,
-                    confidence_interval=(
-                        round(pred_ehull - 1.96 * std, 4),
-                        round(pred_ehull + 1.96 * std, 4),
-                    ),
-                ),
-            )
+        from pymatgen.core import Structure
+        from .inference import get_predictor
+        
+        # Parse structure
+        structure = Structure.from_str(cif_text, fmt="cif")
+        
+        # Run real prediction
+        predictor = get_predictor()
+        result = predictor.predict_structure(structure)
+        
+        return PredictionResponse(
+            success=True,
+            prediction=PredictionResult(
+                material_id=cif_file.filename or "uploaded",
+                pred_ehull=round(result["pred_ehull"], 4),
+                p_stable=round(result["p_stable"], 3),
+                uncertainty=result["uncertainty"],
+                action=result["action"],
+                confidence_interval=result["confidence_interval"],
+            ),
+        )
         
     except Exception as e:
         return PredictionResponse(success=False, error=str(e))

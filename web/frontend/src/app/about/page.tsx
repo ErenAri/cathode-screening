@@ -65,17 +65,7 @@ export default function About() {
                         </div>
                     </div>
 
-                    <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">Citation</h2>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 my-6 font-mono text-xs">
-                        <pre className="whitespace-pre-wrap">
-                            {`@software{cathodescreen2026,
-  title = {CathodeScreen: ML-Powered Cathode Materials Screening},
-  author = {Ari, Eren},
-  year = {2026},
-  url = {https://github.com/ErenAri/cathode-screening}
-}`}
-                        </pre>
-                    </div>
+
 
                     <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">References</h2>
                     <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">

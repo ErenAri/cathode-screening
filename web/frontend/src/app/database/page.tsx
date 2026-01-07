@@ -169,7 +169,7 @@ export default function Database() {
                                 <tbody>
                                     {displayed.map((m, i) => (
                                         <tr key={m.material_id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                                            <td className="px-4 py-3 font-mono text-blue-600">
+                                            <td className="px-4 py-3 font-mono text-blue-700 font-medium">
                                                 <a
                                                     href={`https://materialsproject.org/materials/${m.material_id}`}
                                                     target="_blank"
@@ -178,9 +178,9 @@ export default function Database() {
                                                     {m.material_id}
                                                 </a>
                                             </td>
-                                            <td className="px-4 py-3">{m.formula || "-"}</td>
-                                            <td className="px-4 py-3 text-right font-mono">{m.pred_ehull.toFixed(3)}</td>
-                                            <td className="px-4 py-3 text-right">{(m.p_stable * 100).toFixed(0)}%</td>
+                                            <td className="px-4 py-3 text-gray-900 font-medium">{m.formula || "-"}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-gray-800">{m.pred_ehull.toFixed(3)}</td>
+                                            <td className="px-4 py-3 text-right text-gray-800">{(m.p_stable * 100).toFixed(0)}%</td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className={`text-xs ${m.uncertainty === "Low" ? "text-green-600" :
                                                     m.uncertainty === "Medium" ? "text-yellow-600" : "text-red-600"

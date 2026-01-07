@@ -130,11 +130,13 @@ docker-compose up --build -d
 **Prerequisites**: Python 3.10+, Node.js 20+
 
 ```bash
-# Backend
+# Backend (Terminal 1)
+# Must run from project root
 pip install -r web/api/requirements.txt
 python -m uvicorn web.api.main:app --port 8001
 
-# Frontend
+# Frontend (Terminal 2)
+# Must navigate to frontend directory first!
 cd web/frontend
 npm install
 npm run dev
