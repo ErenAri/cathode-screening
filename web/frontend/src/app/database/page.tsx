@@ -238,7 +238,7 @@ export default function Database() {
             {/* Footer */}
             <footer className="border-t border-gray-200 mt-16">
                 <div className="max-w-5xl mx-auto px-6 py-6 flex justify-between text-sm text-gray-500">
-                    <p>CathodeScreen · Open source research tool</p>
+                    <p>CathodeScreen · Enterprise Platform</p>
                     <div className="flex gap-4">
                         <a href="https://github.com/ErenAri" target="_blank" className="hover:text-gray-900">GitHub</a>
                         <a href={`${API_BASE_URL}/docs`} target="_blank" className="hover:text-gray-900">API</a>
@@ -249,3 +249,4 @@ export default function Database() {
         </div>
     );
 }
+```

@@ -74,23 +74,18 @@ export default function About() {
                         <li>Lakshminarayanan, B., et al. (2017). Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles. <em>NeurIPS</em>.</li>
                         <li>Bartók, A. P., et al. (2013). On representing chemical environments. <em>Phys. Rev. B</em></li>
                     </ol>
-
-                    <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">License</h2>
-                    <p className="text-gray-600">
-                        This tool is open source and free for academic research.
-                        See the <a href="#" className="text-blue-600 hover:underline">GitHub repository</a> for details.
-                    </p>
                 </div>
             </main>
 
             {/* Footer */}
             <footer className="border-t border-gray-200 mt-16">
-                <div className="max-w-4xl mx-auto px-6 py-6 flex justify-between text-sm text-gray-500">
-                    <p>CathodeScreen · Open source research tool</p>
-                    <div className="flex gap-4">
-                        <a href="#" className="hover:text-gray-900">GitHub</a>
-                        <a href="http://localhost:8001/docs" className="hover:text-gray-900">API Docs</a>
-                    </div>
+                import {SocialLinks} from "@/components/SocialLinks";
+
+                // ... (top of file)
+
+                <div className="max-w-4xl mx-auto px-6 py-6 flex justify-between text-sm text-gray-500 items-center">
+                    <p>CathodeScreen · Enterprise Platform</p>
+                    <SocialLinks />
                 </div>
             </footer>
         </div>

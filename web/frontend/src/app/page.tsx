@@ -77,8 +77,8 @@ export default function Home() {
 
       {/* Hero Section */}
       <section className="pt-32 pb-20 px-6 max-w-6xl mx-auto text-center">
-        <div className="inline-block px-3 py-1 mb-6 text-xs font-semibold tracking-wider text-blue-600 uppercase bg-blue-50 rounded-full">
-          Open Source Research Tool
+        <div className="inline-block px-4 py-1.5 bg-blue-50 text-blue-700 rounded-full text-sm font-medium mb-6">
+          Enterprise AI Screening
         </div>
         <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-6 text-gray-900">
           Accelerate Battery Material <br />
@@ -266,12 +266,14 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="bg-gray-50 border-t border-gray-200 py-12">
-        <div className="max-w-6xl mx-auto px-6 text-center">
-          <p className="text-gray-500 mb-4">CathodeScreen · Open Source Research Tool · 2026</p>
+        <div className="max-w-7xl mx-auto px-6 text-center">
+          <p className="text-gray-500 mb-4">CathodeScreen · Enterprise Platform · 2026</p>
+          <div className="flex justify-center mb-6">
+            <SocialLinks />
+          </div>
           <div className="flex justify-center gap-6 text-sm text-gray-600">
-            <a href="https://github.com/ErenAri" target="_blank" className="hover:text-blue-600">GitHub</a>
             <a href="/about" className="hover:text-blue-600">About</a>
-            <a href={`${API_BASE_URL}/docs`} className="hover:text-blue-600">API Documentation</a>
+            <a href="/privacy" className="hover:text-blue-600">Privacy</a>
           </div>
         </div>
       </footer>

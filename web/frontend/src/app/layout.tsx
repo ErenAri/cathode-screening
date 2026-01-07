@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CathodeScreen - AI-Powered Battery Materials Discovery",
-  description: "Free, open-source tool for predicting cathode material stability using machine learning",
+  title: "CathodeScreen | Enterprise Material Discovery",
+  description: "AI-powered platform for predicting cathode material stability using machine learning",
 };
 
 export default function RootLayout({
