@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SocialLinks } from "@/components/SocialLinks";
 
 export default function About() {
     return (
@@ -79,10 +80,6 @@ export default function About() {
 
             {/* Footer */}
             <footer className="border-t border-gray-200 mt-16">
-                import {SocialLinks} from "@/components/SocialLinks";
-
-                // ... (top of file)
-
                 <div className="max-w-4xl mx-auto px-6 py-6 flex justify-between text-sm text-gray-500 items-center">
                     <p>CathodeScreen · Enterprise Platform</p>
                     <SocialLinks />

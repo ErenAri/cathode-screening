@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import API_BASE_URL, { API_KEY } from "@/config";
+import { SocialLinks } from "@/components/SocialLinks";
 
 interface PredictionResult {
   material_id: string;
