@@ -87,3 +87,6 @@ steps:
 images:
   - 'gcr.io/$PROJECT_ID/cathode-backend'
   - 'gcr.io/$PROJECT_ID/cathode-frontend'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
