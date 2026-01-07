@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.mypy_cache/
+
+# Data (Ignore raw data, keep predictions needed for app)
+data/
+!data/predictions
+
+# VsCode
+.vscode/
+
+# Artifacts (Allow models, ignore others if huge?)
+artifacts/
+!artifacts/models
+
+# Frontend
+web/frontend/node_modules
+web/frontend/.next
+web/frontend/out
+web/frontend/build
