@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import API_BASE_URL from "@/config";
+import API_BASE_URL, { API_KEY } from "@/config";
 
 interface MaterialPrediction {
     material_id: string;
@@ -24,7 +24,11 @@ export default function Database() {
 
     // Fetch data from API
     useEffect(() => {
-        fetch(`${API_BASE_URL}/database`)
+        fetch(`${API_BASE_URL}/database`, {
+            headers: {
+                "X-API-Key": API_KEY
+            }
+        })
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) {

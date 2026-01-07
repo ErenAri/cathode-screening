@@ -25,8 +25,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY web /app/web
 
-# Copy trained models (Ensemble)
-COPY artifacts/models /app/artifacts/models
+# Copy all artifacts (models, meta, etc)
+COPY artifacts /app/artifacts
 
 # Copy database predictions (Parquet)
 COPY data/predictions /app/data/predictions

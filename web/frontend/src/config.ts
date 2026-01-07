@@ -10,4 +10,5 @@ console.log("   API_BASE_URL:", API_BASE_URL);
 console.log("   NODE_ENV:", process.env.NODE_ENV);
 console.log("----------------------------------------");
 
+export const API_KEY = "CATHODE_SCREEN_2026";
 export default API_BASE_URL;

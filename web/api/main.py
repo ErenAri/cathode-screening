@@ -12,9 +12,24 @@ from typing import List, Optional
 import tempfile
 import json
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
+
+# Security Configuration
+API_KEY_NAME = "X-API-Key"
+API_KEY = "CATHODE_SCREEN_2026"  # Simple key for demo protection
+
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+async def get_api_key(api_key_header: str = Security(api_key_header)):
+    if api_key_header == API_KEY:
+        return api_key_header
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Could not validate credentials",
+    )
 
 app = FastAPI(
     title="CathodeScreen API",
@@ -111,7 +126,7 @@ async def get_model_info():
 
 
 @app.get("/database")
-async def get_database():
+async def get_database(api_key: str = Security(get_api_key)):
     """Get pre-computed predictions from the database."""
     import pandas as pd
     from pathlib import Path
@@ -120,7 +135,8 @@ async def get_database():
     predictions_path = Path("data/predictions/ensemble_soap_loco_test.parquet")
     
     if not predictions_path.exists():
-        return {"success": False, "error": "Predictions file not found", "data": []}
+        # Raise 500 error instead of failing silently
+        raise HTTPException(status_code=500, detail="Predictions file not found on server")
     
     try:
         df = pd.read_parquet(predictions_path)
@@ -154,24 +170,19 @@ async def get_database():
                 "p_stable": round(float(p_stable), 3),
                 "uncertainty": unc,
                 "action": action,
+                confidence_interval=(0.0, 0.0) # Placeholder if needed
             })
         
         return {"success": True, "data": data, "total": len(df)}
     
     except Exception as e:
-        return {"success": False, "error": str(e), "data": []}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/predict", response_model=PredictionResponse)
-async def predict_structure(cif_file: UploadFile = File(...)):
+async def predict_structure(cif_file: UploadFile = File(...), api_key: str = Security(get_api_key)):
     """
     Predict stability for a single CIF structure.
-    
-    Upload a CIF file and receive:
-    - Predicted energy above hull (eV/atom)
-    - Probability of stability 
-    - Uncertainty level
-    - Recommended action (DFT/HOLD/SKIP)
     """
     try:
         # Read CIF content
@@ -201,11 +212,12 @@ async def predict_structure(cif_file: UploadFile = File(...)):
         )
         
     except Exception as e:
-        return PredictionResponse(success=False, error=str(e))
+        # CRITICAL: No mock fallback here. Error out.
+        raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse)
-async def predict_batch(cif_files: List[UploadFile] = File(...)):
+async def predict_batch(cif_files: List[UploadFile] = File(...), api_key: str = Security(get_api_key)):
     """
     Predict stability for multiple CIF structures.
     

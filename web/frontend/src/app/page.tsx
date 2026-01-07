@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import API_BASE_URL from "@/config";
+import { useState } from "react";
+import API_BASE_URL, { API_KEY } from "@/config";
 
 interface PredictionResult {
   material_id: string;
@@ -39,6 +39,9 @@ export default function Home() {
       // Use configured API URL
       const response = await fetch(`${API_BASE_URL}/predict`, {
         method: "POST",
+        headers: {
+          "X-API-Key": API_KEY
+        },
         body: formData,
       });
 
