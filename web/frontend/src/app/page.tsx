@@ -36,8 +36,8 @@ export default function Home() {
       const formData = new FormData();
       formData.append("cif_file", file);
 
-      // Using port 8001 for now (workaround)
-      const response = await fetch("http://localhost:8001/predict", {
+      // Use configured API URL
+      const response = await fetch(`${API_BASE_URL}/predict`, {
         method: "POST",
         body: formData,
       });

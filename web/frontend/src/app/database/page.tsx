@@ -24,7 +24,7 @@ export default function Database() {
 
     // Fetch data from API
     useEffect(() => {
-        fetch("http://localhost:8001/database")
+        fetch(`${API_BASE_URL}/database`)
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) {
