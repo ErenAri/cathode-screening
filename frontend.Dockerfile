@@ -17,6 +17,9 @@ ENV NEXT_TELEMETRY_DISABLED 1
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
+# Create .env.production to ensure Next.js picks it up
+RUN echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" > .env.production
+
 RUN npm run build
 
 # Stage 3: Runner

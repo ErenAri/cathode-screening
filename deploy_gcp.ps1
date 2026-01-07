@@ -51,6 +51,11 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Backend deployment failed." }
 
 # Get Backend URL
 $BackendUrl = (gcloud run services describe cathode-backend --platform managed --region $Region --format 'value(status.url)')
+
+if ([string]::IsNullOrWhiteSpace($BackendUrl)) {
+    Write-Error "Failed to retrieve Backend URL. Please check the backend deployment."
+}
+
 Write-Host "Backend is live at: $BackendUrl" -ForegroundColor Green
 
 # 4. Deploy Frontend
