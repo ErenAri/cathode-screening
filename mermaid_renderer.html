@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+    </script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: white; }
+        .diagram-container { margin-bottom: 50px; padding: 20px; border: 1px solid #ddd; display: inline-block; }
+        h2 { margin-bottom: 10px; font-size: 14px; color: #666; }
+    </style>
+</head>
+<body>
+
+    <div id="diagram1" class="diagram-container">
+        <h2>1. Screening Funnel</h2>
+        <div class="mermaid">
+graph LR
+    Space["Vast Chemical Space"] -->|"100k+ Candidates"| ML["CathodeScreen AI"]
+    ML -->|"Filter (Pre-Screen)"| Promising["Top 10% Candidates"]
+    Promising -->|DFT| Validation["Physics Validation"]
+    Validation -->|Success| Battery["New Battery Material"]
+    ML -->|"Discard (Unstable)"| Waste["Saved Compute Resources"]
+    style ML fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style Battery fill:#cce5ff,stroke:#004085,stroke-width:2px
+        </div>
+    </div>
+    <br>
+
+    <div id="diagram2" class="diagram-container">
+        <h2>2. GNN Architecture</h2>
+        <div class="mermaid">
+graph TD
+    subgraph Crystal_Structure
+    Atom1(("Li")) ---|"Bond 2.1A"| Atom2(("O"))
+    Atom2 ---|"Bond 1.9A"| Atom3(("Mn"))
+    Atom3 ---|"Bond 2.0A"| Atom1
+    end
+    
+    subgraph Graph_Neural_Network
+    Atom1 -->|"Message Passing"| Conv["Convolution Layer"]
+    Atom2 -->|Message Passing| Conv
+    Atom3 -->|Message Passing| Conv
+    Conv -->|"Update State"| Hidden["Hidden Features"]
+    Hidden -->|Pooling| Readout["Global Stability (E_hull)"]
+    end
+        </div>
+    </div>
+    <br>
+
+    <div id="diagram3" class="diagram-container">
+        <h2>3. Deep Ensemble</h2>
+        <div class="mermaid">
+graph LR
+    Input["Crystal Structure"] --> Model1["Model A"]
+    Input --> Model2["Model B"]
+    Input --> Model3["Model C"]
+    Input --> Model4["Model D"]
+    Input --> Model5["Model E"]
+    
+    Model1 --> Stats["Aggregate Stats"]
+    Model2 --> Stats
+    Model3 --> Stats
+    Model4 --> Stats
+    Model5 --> Stats
+    
+    subgraph Bayesian_Decision
+    Stats -->|Mean| Prediction["Predicted Energy"]
+    Stats -->|Variance| Uncertainty["Epistemic Uncertainty"]
+    end
+    
+    Uncertainty -->|High| Action1["HOLD: Active Learning"]
+    Uncertainty -->|Low| Action2["RECOMMEND: DFT"]
+        </div>
+    </div>
+    <br>
+
+    <div id="diagram4" class="diagram-container">
+        <h2>4. Cloud Architecture</h2>
+        <div class="mermaid">
+graph LR
+    User -->|HTTPS| CDN["Product Load Balancer"]
+    CDN -->|Next.js| Frontend["Frontend Service"]
+    Frontend -->|JSON/API| Backend["FastAPI Inference Service"]
+    
+    subgraph Google_Cloud_Run
+    Backend -->|Load| Artifacts["Model Artifacts"]
+    Backend -->|Compute| PyTorch["PyTorch Engine"]
+    end
+    
+    Backend -->|Read| Parquet["Pre-computed Database"]
+        </div>
+    </div>
+
+</body>
+</html>
