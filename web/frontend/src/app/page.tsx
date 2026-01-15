@@ -66,21 +66,7 @@ export default function Home() {
       <header className="fixed w-full bg-white/80 backdrop-blur-md z-50 border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <h1 className="text-xl font-bold tracking-tight text-gray-900">CathodeScreen</h1>
-          <nav className="flex gap-8 text-sm font-medium">
-          <a
-            href="https://www.sideprojectors.com/project/71381/cathodescreen-or-enterprise-material-discovery"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="CathodeScreen | Enterprise Material Discovery is for sale at SideProjectors"
-          >
-            <img
-              style={{ position: "fixed", zIndex: 1000, top: "-5px", right: "20px", border: 0 }}
-              src="https://www.sideprojectors.com/img/badges/badge_2_red.png"
-              alt="CathodeScreen | Enterprise Material Discovery is for sale at SideProjectors"
-            />
-          </a>
 
-          </nav>
           <nav className="flex gap-8 text-sm font-medium">
             <a href="#predict" className="text-blue-600">Predict</a>
             <a href="#results" className="text-gray-600 hover:text-gray-900">Results</a>
