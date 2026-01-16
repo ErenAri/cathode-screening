@@ -40,12 +40,14 @@ Traditional high-throughput screening relies on massive DFT compute resources. H
 
 ## System Architecture
 
-The application uses a decoupled microservices architecture optimized for cloud deployment.
+The application uses a decoupled microservices architecture optimized for cloud deployment. In production, the API can be fronted by an HTTPS load balancer with Cloud Armor (optional, requires a custom domain) and connected to centralized logging/metrics/tracing for SRE.
 
 ```mermaid
 graph LR
-    User[User / Chemist] -->|Upload .CIF| FE(Next.js Frontend)
-    FE -->|JSON Request| API(FastAPI Inference)
+    User[User / Chemist] -->|HTTPS| FE(Next.js Frontend)
+    User -->|API Clients| Edge[HTTPS LB + Cloud Armor]
+    FE -->|JSON Request| Edge
+    Edge -->|API| API(FastAPI Inference)
     subgraph "Inference Engine"
         API -->|Parse| Pymatgen(Structure Parser)
         Pymatgen -->|Graph| GNN1(CGCNN Model 1)
@@ -54,8 +56,16 @@ graph LR
         Pymatgen -->|Graph| GNN4(CGCNN Model 4)
         Pymatgen -->|Graph| GNN5(CGCNN Model 5)
     end
-    GNN1 & GNN2 & GNN3 & GNN4 & GNN5 -->|Aggregator| Stats(Mean & Variance)
+    GNN1 & GNN2 & GNN3 & GNN4 & GNN5 -->|Aggregator| Stats(Mean & Variance)     
     Stats -->|Policy| Result[Action Recommendation]
+    subgraph "Observability"
+        Logs[Cloud Logging]
+        Metrics[Prometheus / Cloud Monitoring]
+        Traces[OpenTelemetry]
+    end
+    API --> Logs
+    API --> Metrics
+    API --> Traces
 ```
 
 ### Components
@@ -124,6 +134,15 @@ docker-compose up --build -d
 # Backend Docs: http://localhost:8080/docs
 ```
 
+Optional edge proxy (rate limiting, headers):
+
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.edge.yml up --build -d
+```
+
+GCP deployment notes are in `docs/gcp_deployment.md` (uses `deploy_gcp.ps1`).
+GCP edge, observability, and scaling guides: `docs/gcp_edge_cloud_armor.md`, `docs/gcp_observability.md`, `docs/gcp_scaling.md`.
+
 ### Option 2: Local Development
 
 **Prerequisites**: Python 3.10+, Node.js 20+
@@ -140,6 +159,41 @@ cd web/frontend
 npm install
 npm run dev
 ```
+
+### API Security & Limits
+
+For production deployments:
+- Set `CATHODE_ENV=production`, `CATHODE_AUTH_ENABLED=true`, and provide `CATHODE_API_KEY` (or `CATHODE_API_KEYS` / `CATHODE_API_KEY_HASHES`). Requests can use `X-API-Key` or `Authorization: Bearer`.
+- Configure request limits and validation, e.g. `CATHODE_RATE_LIMIT_PER_MINUTE`, `CATHODE_MAX_FILE_BYTES`, `CATHODE_MAX_BATCH_SIZE`, and `CATHODE_MAX_ATOMS`.
+- Apply backpressure with `CATHODE_MAX_CONCURRENT_REQUESTS` and `CATHODE_CONCURRENCY_TIMEOUT_SECONDS`.
+- Consider `CATHODE_IP_ALLOWLIST`, `CATHODE_TRUST_PROXY`, `CATHODE_FORCE_HTTPS`, and `CATHODE_SECURITY_HEADERS` behind a trusted reverse proxy.
+- Use `CATHODE_SECRET_FILE` or `CATHODE_SECRET_COMMAND` to load secrets at startup.
+- Enforce startup checks with `CATHODE_STRICT_STARTUP=true` and `CATHODE_REQUIRE_CALIBRATION=true`.
+- Sign and verify artifacts with `CATHODE_MANIFEST_HMAC_KEY` + `CATHODE_REQUIRE_MANIFEST_SIGNATURE=true`.
+- Keep safe checkpoint loading enabled; only set `CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true` when artifacts are fully trusted.
+
+### Observability
+
+- Each response includes `X-Request-ID` (client-supplied or generated).
+- Enable request logging with `CATHODE_LOG_REQUESTS=true`.
+- Enable Prometheus text metrics at `/metrics/prometheus` with `CATHODE_PROMETHEUS_ENABLED=true`.
+- Enable OpenTelemetry tracing with `CATHODE_OTEL_ENABLED=true` and set `CATHODE_OTEL_EXPORTER_OTLP_ENDPOINT`.
+- See `docs/observability.md` for example alert rules.
+- GCP-specific alert setup is covered in `docs/gcp_observability.md`.
+
+### ML Governance
+
+- Generate and sign artifact manifests with `scripts/08_generate_artifact_manifest.py --sign` and verify via `CATHODE_REQUIRE_MANIFEST_SIGNATURE=true`.
+- Evaluate prediction quality with `scripts/09_evaluate_predictions.py`.
+- Track drift with `scripts/10_compute_drift.py` (outputs `retrain_recommended` when PSI exceeds threshold).
+- Gate releases with `scripts/12_validate_release.py` and publish to a registry using `scripts/13_publish_registry.py`.
+
+See `docs/production_checklist.md` for a full production readiness checklist.
+
+### Load Testing
+
+- Use `scripts/11_load_test_api.py` to generate baseline latency/error stats for `/predict`.
+- For Cloud Run scaling guidance, see `docs/gcp_scaling.md`.
 
 ---
 

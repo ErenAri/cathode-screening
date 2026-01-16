@@ -9,6 +9,10 @@ services:
       - "8080:8080"
     environment:
       - PORT=8080
+      - CATHODE_ENV=development
+      - CATHODE_AUTH_ENABLED=false
+      - CATHODE_REQUIRE_MANIFEST_SIGNATURE=${CATHODE_REQUIRE_MANIFEST_SIGNATURE:-true}
+      - CATHODE_MANIFEST_HMAC_KEY=${CATHODE_MANIFEST_HMAC_KEY}
     volumes:
       - ./artifacts:/app/artifacts # Live usage of artifacts (optional)
       - ./data:/app/data # Live usage of data (optional)

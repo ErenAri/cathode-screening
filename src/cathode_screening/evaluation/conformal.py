@@ -23,7 +23,7 @@ Group-Conditional Mode:
     Storage: {cluster_id: {delta_upper, delta_lower}, "_global": {...}}
 """
 import json
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Optional, Union, Dict, Any, List
@@ -378,7 +378,9 @@ def load_calibration_params(path: Union[str, Path]) -> ConformalCalibrationParam
     """Load calibration parameters from JSON file."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return ConformalCalibrationParams(**data)
+    allowed = {f.name for f in fields(ConformalCalibrationParams)}
+    filtered = {k: v for k, v in data.items() if k in allowed}
+    return ConformalCalibrationParams(**filtered)
 
 
 def load_group_calibration_params(path: Union[str, Path]) -> GroupConformalParams:

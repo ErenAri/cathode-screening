@@ -11,28 +11,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PyTorch CPU version FIRST (to avoid downloading huge GPU version)
-# This saves ~2GB of image size
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-
 # Copy requirements
 COPY web/api/requirements.txt /app/requirements.txt
 
 # Install other dependencies
-# (excluding torch since we installed it manually)
+# Ensure CPU-only torch wheels are used if torch is in requirements.txt
+ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code and core package
 COPY web /app/web
+COPY src /app/src
+COPY configs /app/configs
 
-# Copy all artifacts (models, meta, etc)
-COPY artifacts /app/artifacts
-
-# Copy database predictions (Parquet)
+# Copy artifacts and database predictions
+COPY data/artifacts /app/data/artifacts
 COPY data/predictions /app/data/predictions
 
-# Create unprivileged user for security (optional but AWS/GCP best practice)
-# But often simpler to run as root in simple containers. Sticking to root for MVP simplicity.
+# Create unprivileged user for security
+RUN adduser --disabled-password --gecos "" appuser \
+    && chown -R appuser:appuser /app
+USER appuser
 
 # Expose port (Cloud Run sets PORT env var, defaults to 8080)
 ENV PORT=8080

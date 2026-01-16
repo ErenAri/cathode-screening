@@ -25,11 +25,12 @@ export default function Database() {
 
     // Fetch data from API
     useEffect(() => {
-        fetch(`${API_BASE_URL}/database`, {
-            headers: {
-                "X-API-Key": API_KEY
-            }
-        })
+        const headers: HeadersInit = {};
+        if (API_KEY) {
+            headers["X-API-Key"] = API_KEY;
+        }
+
+        fetch(`${API_BASE_URL}/database`, { headers })
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) {

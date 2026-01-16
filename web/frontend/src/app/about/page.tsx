@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SocialLinks } from "@/components/SocialLinks";
+import API_BASE_URL from "@/config";
 
 export default function About() {
     return (
@@ -14,7 +15,7 @@ export default function About() {
                         <Link href="/" className="text-gray-600 hover:text-gray-900">Predict</Link>
                         <Link href="/database" className="text-gray-600 hover:text-gray-900">Database</Link>
                         <Link href="/about" className="text-blue-600 font-medium">About</Link>
-                        <a href="http://localhost:8001/docs" className="text-gray-600 hover:text-gray-900">API</a>
+                        <a href={`${API_BASE_URL}/docs`} className="text-gray-600 hover:text-gray-900">API</a>
                     </nav>
                 </div>
             </header>

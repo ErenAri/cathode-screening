@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend:
+    ports: []
+
+  edge:
+    build:
+      context: .
+      dockerfile: docker/edge/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - EDGE_RATE=${EDGE_RATE:-10r/s}
+      - EDGE_BURST=${EDGE_BURST:-20}
+      - EDGE_MAX_BODY=${EDGE_MAX_BODY:-2m}
+      - EDGE_CONNECT_TIMEOUT=${EDGE_CONNECT_TIMEOUT:-5s}
+      - EDGE_READ_TIMEOUT=${EDGE_READ_TIMEOUT:-60s}
+      - EDGE_SEND_TIMEOUT=${EDGE_SEND_TIMEOUT:-60s}
+    depends_on:
+      - backend

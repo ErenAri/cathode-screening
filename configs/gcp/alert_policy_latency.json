@@ -1,0 +1,30 @@
+{
+  "displayName": "Cathode API P95 Latency",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "P95 latency",
+      "conditionThreshold": {
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"__SERVICE_NAME__\" AND metric.type=\"run.googleapis.com/request_latencies\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 2,
+        "duration": "300s",
+        "aggregations": [
+          {
+            "alignmentPeriod": "60s",
+            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_MAX",
+            "groupByFields": [
+              "resource.label.service_name"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "documentation": {
+    "content": "P95 request latency exceeds threshold for service __SERVICE_NAME__.",
+    "mimeType": "text/markdown"
+  },
+  "enabled": true
+}

@@ -1,0 +1,8 @@
+{
+  "coverage_min": 0.88,
+  "keep_precision_min": 0.85,
+  "kill_precision_min": 0.9,
+  "stable_kill_rate_max": 0.05,
+  "mae_max": 0.08,
+  "decisive_rate_min": 0.1
+}

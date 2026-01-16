@@ -24,7 +24,7 @@ class TieredScreener:
     
     Usage:
         screener = TieredScreener(
-            cgcnn_ensemble_dir="artifacts/models/ensemble_xxx",
+            cgcnn_ensemble_dir="data/artifacts/ensemble",
             alignn_checkpoint="artifacts/models/alignn/best.pt",
         )
         results = screener.screen(structures, top_k=100)
@@ -35,7 +35,7 @@ class TieredScreener:
         cgcnn_ensemble_dir: Optional[str] = None,
         alignn_checkpoint: Optional[str] = None,
         alignn_pretrained: str = "jv_formation_energy_peratom_alignn",
-        device: str = "cuda",
+        device: str = "auto",
         top_k: int = 100,
     ):
         """
@@ -48,7 +48,7 @@ class TieredScreener:
             device: Device for inference
             top_k: Number of top candidates for ALIGNN refinement
         """
-        self.device = device
+        self.device = self._resolve_device(device)
         self.top_k = top_k
         
         self.cgcnn_ensemble = None
@@ -63,7 +63,12 @@ class TieredScreener:
             self._load_alignn_checkpoint(alignn_checkpoint)
         elif alignn_pretrained:
             self._load_alignn_pretrained(alignn_pretrained)
-    
+
+    def _resolve_device(self, device: str) -> str:
+        if device == "auto":
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        return device
+
     def _load_cgcnn_ensemble(self, ensemble_dir: str) -> None:
         """Load CGCNN ensemble from directory."""
         # Import here to avoid circular dependency
@@ -88,8 +93,12 @@ class TieredScreener:
     def _load_alignn_pretrained(self, model_name: str) -> None:
         """Load pretrained ALIGNN."""
         from cathode_screening.models.alignn.wrapper import ALIGNNWrapper
-        
-        self.alignn_model = ALIGNNWrapper.from_pretrained(model_name)
+        wrapper = ALIGNNWrapper.from_pretrained(model_name)
+        if str(wrapper.device) != self.device:
+            wrapper.device = torch.device(self.device)
+            if wrapper.model is not None:
+                wrapper.model.to(wrapper.device)
+        self.alignn_model = wrapper
         print(f"Loaded pretrained ALIGNN: {model_name}")
     
     def screen_stage1_cgcnn(

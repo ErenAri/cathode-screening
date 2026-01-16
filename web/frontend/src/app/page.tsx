@@ -38,11 +38,14 @@ export default function Home() {
       formData.append("cif_file", file);
 
       // Use configured API URL
+      const headers: HeadersInit = {};
+      if (API_KEY) {
+        headers["X-API-Key"] = API_KEY;
+      }
+
       const response = await fetch(`${API_BASE_URL}/predict`, {
         method: "POST",
-        headers: {
-          "X-API-Key": API_KEY
-        },
+        headers,
         body: formData,
       });
 

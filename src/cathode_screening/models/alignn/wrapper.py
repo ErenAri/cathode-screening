@@ -12,6 +12,7 @@ import warnings
 import numpy as np
 import torch
 
+from cathode_screening.common.serialization import safe_torch_load
 # Check ALIGNN availability
 ALIGNN_AVAILABLE = False
 ALIGNN = None
@@ -95,7 +96,7 @@ class ALIGNNWrapper:
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
         
         # Load checkpoint
-        ckpt = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        ckpt = safe_torch_load(checkpoint_path, self.device)
         
         # Initialize model from config
         if self.config is None:
