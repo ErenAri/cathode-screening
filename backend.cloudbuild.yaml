@@ -1,5 +1,23 @@
 steps:
+- name: 'gcr.io/cloud-builders/gsutil'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+      if [[ -d "data/artifacts" ]]; then
+        echo "Using local data/artifacts from build context"
+        exit 0
+      fi
+      artifacts_uri="${_ARTIFACTS_GCS_URI}"
+      if [[ -z "${artifacts_uri}" ]]; then
+        artifacts_uri="gs://${PROJECT_ID}_cloudbuild/cathode/artifacts"
+      fi
+      echo "Fetching artifacts from ${artifacts_uri}"
+      mkdir -p data/artifacts
+      gsutil -m rsync -r "${artifacts_uri}" data/artifacts
 - name: 'gcr.io/cloud-builders/docker'
   args: [ 'build', '-t', 'gcr.io/$PROJECT_ID/cathode-backend', '-f', 'backend.Dockerfile', '.' ]
 images:
 - 'gcr.io/$PROJECT_ID/cathode-backend'
+substitutions:
+  _ARTIFACTS_GCS_URI: ""

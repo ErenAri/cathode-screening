@@ -29,6 +29,24 @@ printf "YOUR_API_KEY" | gcloud secrets versions add cathode-api-keys --data-file
 printf "YOUR_MANIFEST_HMAC_KEY" | gcloud secrets versions add cathode-manifest-hmac-key --data-file=-
 ```
 
+## Model artifacts from GCS (recommended)
+
+Artifacts are not checked into git. For CI/CD builds, upload `data/artifacts` to a GCS bucket and point Cloud Build at the URI.
+
+```
+gsutil -m rsync -r data/artifacts gs://YOUR_BUCKET/cathode/artifacts
+```
+
+Grant the Cloud Build service account `roles/storage.objectViewer` on the bucket.
+
+To deploy with the helper script:
+
+```
+.\deploy_gcp.ps1 -ProjectId YOUR_PROJECT_ID -Region us-central1 -UseSecretManager -ArtifactsGcsUri gs://YOUR_BUCKET/cathode/artifacts
+```
+
+For GitHub triggers, you can set the substitution `_ARTIFACTS_GCS_URI` to the same GCS path. If you leave it unset, Cloud Build defaults to `gs://$PROJECT_ID_cloudbuild/cathode/artifacts`.
+
 ## Deploy
 
 ```
@@ -42,6 +60,7 @@ By default the script sets production env vars, turns on request logging, and en
 - `-AllowUnauthenticatedBackend` (use API key auth only)
 - `-BackendConcurrency` / `-BackendMaxInstances` / `-BackendMinInstances`
 - `-ServiceAccount` for Cloud Run service account
+- `-ArtifactsGcsUri` to fetch model artifacts during Cloud Build
 
 ## Edge protection (Cloud Armor)
 

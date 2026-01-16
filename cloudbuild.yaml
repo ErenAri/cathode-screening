@@ -3,6 +3,25 @@ steps:
   # 1. Backend Pipeline
   # ==========================================
   
+  # Fetch artifacts from GCS (or use local copy if present)
+  - name: 'gcr.io/cloud-builders/gsutil'
+    id: 'Fetch Artifacts'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [[ -d "data/artifacts" ]]; then
+          echo "Using local data/artifacts from build context"
+          exit 0
+        fi
+        artifacts_uri="${_ARTIFACTS_GCS_URI}"
+        if [[ -z "${artifacts_uri}" ]]; then
+          artifacts_uri="gs://${PROJECT_ID}_cloudbuild/cathode/artifacts"
+        fi
+        echo "Fetching artifacts from ${artifacts_uri}"
+        mkdir -p data/artifacts
+        gsutil -m rsync -r "${artifacts_uri}" data/artifacts
+  
   # Build Backend Image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'Build Backend'
@@ -90,3 +109,6 @@ images:
 
 options:
   logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _ARTIFACTS_GCS_URI: ""

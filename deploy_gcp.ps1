@@ -1,5 +1,5 @@
 # CathodeScreen Deployment Script for Google Cloud Platform
-# Usage: .\deploy_gcp.ps1 -ProjectId YOUR_PROJECT_ID
+# Usage: .\deploy_gcp.ps1 -ProjectId YOUR_PROJECT_ID [-ArtifactsGcsUri gs://YOUR_BUCKET/path]
 
 param (
     [Parameter(Mandatory = $true)]
@@ -9,6 +9,7 @@ param (
 
     [string]$BackendServiceName = "cathode-backend",
     [string]$FrontendServiceName = "cathode-frontend",
+    [string]$ArtifactsGcsUri = "",
 
     [switch]$UseSecretManager,
     [string]$ApiKeysSecret = "cathode-api-keys",
@@ -61,7 +62,14 @@ Write-Step "Building & Deploying Backend (Cloud Run)"
 Write-Host "NOTE: If prompted to enable APIs (run.googleapis.com, cloudbuild.googleapis.com), please press 'y' and Enter." -ForegroundColor Yellow
 
 # Build using cloudbuild.yaml to support custom Dockerfile
-gcloud builds submit --config backend.cloudbuild.yaml .
+$BuildArgs = @("builds", "submit", "--config", "backend.cloudbuild.yaml", ".")
+if (-not [string]::IsNullOrWhiteSpace($ArtifactsGcsUri)) {
+    $BuildArgs += @("--substitutions", "_ARTIFACTS_GCS_URI=$ArtifactsGcsUri")
+} elseif (-not (Test-Path "data/artifacts")) {
+    Write-Host "Warning: data/artifacts not found locally and -ArtifactsGcsUri not set. Cloud Build will fail." -ForegroundColor Yellow
+}
+
+gcloud @BuildArgs
 
 if ($LASTEXITCODE -ne 0) { Write-Error "Backend build failed." }
 
