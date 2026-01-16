@@ -93,7 +93,8 @@ $BackendEnvVars = @(
     "CATHODE_FORCE_HTTPS=true",
     "CATHODE_SECURITY_HEADERS=true",
     "CATHODE_PROMETHEUS_ENABLED=true",
-    "CATHODE_LOG_REQUESTS=true"
+    "CATHODE_LOG_REQUESTS=true",
+    "CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true"
 )
 
 $BackendArgs = @(
