@@ -56,7 +56,7 @@ def safe_torch_load(
                 "CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true to allow unsafe loading."
             ) from exc
         logger.warning("Falling back to unsafe torch.load for %s", path)
-        return torch.load(path, map_location=map_location)
+        return torch.load(path, map_location=map_location, weights_only=False)
     except Exception as exc:
         msg = str(exc).lower()
         weights_only_error = (
@@ -75,4 +75,4 @@ def safe_torch_load(
                 "to allow unsafe loading."
             ) from exc
         logger.warning("Safe torch.load failed for %s (%s). Using unsafe load.", path, msg)
-        return torch.load(path, map_location=map_location)
+        return torch.load(path, map_location=map_location, weights_only=False)
