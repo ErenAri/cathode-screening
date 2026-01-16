@@ -23,9 +23,12 @@ coverage.xml
 .pytest_cache/
 .mypy_cache/
 
-# Data (Ignore raw data, keep predictions needed for app)
+# Data (ignore raw data, keep artifacts + predictions needed for app)
 data/
-!data/predictions
+!data/predictions/
+!data/predictions/**
+!data/artifacts/
+!data/artifacts/**
 
 # VsCode
 .vscode/
