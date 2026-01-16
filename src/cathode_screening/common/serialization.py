@@ -58,11 +58,14 @@ def safe_torch_load(
         logger.warning("Falling back to unsafe torch.load for %s", path)
         return torch.load(path, map_location=map_location)
     except Exception as exc:
-        msg = str(exc)
+        msg = str(exc).lower()
         weights_only_error = (
-            "Weights only load failed" in msg
-            or "WeightsUnpickler error" in msg
+            "weights only load failed" in msg
+            or "weightsunpickler error" in msg
             or "weights_only" in msg
+            or "unpickler" in msg
+            or "pickle" in msg
+            or "_rebuild" in msg
         )
         if not weights_only_error:
             raise
