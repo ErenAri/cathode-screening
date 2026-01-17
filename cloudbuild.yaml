@@ -55,6 +55,11 @@ steps:
       - '4Gi'
       - '--cpu'
       - '2'
+      - '--timeout'
+      - '300'
+      - '--cpu-boost'
+      - '--max-instances'
+      - '5'
 
   # ==========================================
   # 2. Frontend Pipeline
