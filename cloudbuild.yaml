@@ -48,13 +48,13 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'CATHODE_ENV=production,CATHODE_AUTH_ENABLED=true,CATHODE_REQUIRE_MANIFEST_SIGNATURE=${_REQUIRE_MANIFEST_SIGNATURE},CATHODE_TRUST_PROXY=true,CATHODE_TRUST_PROXY_HOPS=1,CATHODE_FORCE_HTTPS=true,CATHODE_SECURITY_HEADERS=true,CATHODE_PROMETHEUS_ENABLED=true,CATHODE_LOG_REQUESTS=true,CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true,CATHODE_CORS_ORIGINS=https://*.run.app'
-      - '--set-secrets'
-      - 'CATHODE_API_KEYS=${_API_KEYS_SECRET}:latest,CATHODE_MANIFEST_HMAC_KEY=${_MANIFEST_KEY_SECRET}:latest'
+      - 'CATHODE_ENV=production,CATHODE_AUTH_ENABLED=false,CATHODE_MODEL_TYPE=chgnet,CATHODE_REQUIRE_MANIFEST_SIGNATURE=false,CATHODE_TRUST_PROXY=true,CATHODE_TRUST_PROXY_HOPS=1,CATHODE_FORCE_HTTPS=true,CATHODE_SECURITY_HEADERS=true,CATHODE_PROMETHEUS_ENABLED=true,CATHODE_LOG_REQUESTS=true,CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true,CATHODE_CORS_ORIGINS=*'
       - '--port'
       - '8080'
       - '--memory'
-      - '2Gi'
+      - '4Gi'
+      - '--cpu'
+      - '2'
 
   # ==========================================
   # 2. Frontend Pipeline

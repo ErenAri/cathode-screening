@@ -24,9 +24,14 @@ COPY web /app/web
 COPY src /app/src
 COPY configs /app/configs
 
-# Copy artifacts and database predictions
+# Copy artifacts (includes CHGNet ensemble at data/artifacts/chgnet_ensemble)
 COPY data/artifacts /app/data/artifacts
 COPY data/predictions /app/data/predictions
+
+# Set environment variables for CHGNet
+ENV PYTHONPATH=/app/src
+ENV CATHODE_MODEL_TYPE=chgnet
+ENV CATHODE_ARTIFACTS_DIR=/app/data/artifacts
 
 # Create unprivileged user for security
 RUN adduser --disabled-password --gecos "" appuser \
