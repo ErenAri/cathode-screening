@@ -226,7 +226,7 @@ export default function Home() {
           <div>
             <h2 className="text-3xl font-bold text-gray-900 mb-6">Built on Rigorous Science</h2>
             <p className="text-lg text-gray-600 mb-6">
-              We leverage a deep ensemble of Crystal Graph Convolutional Neural Networks (CGCNN), trained on over 17,000 cathode materials.
+              We leverage a deep ensemble of CHGNet (Crystal Hamiltonian Graph Neural Network) models, fine-tuned on 11,377 Li-cathode materials.
             </p>
             <ul className="space-y-4 mb-8">
               <li className="flex items-start gap-3">
