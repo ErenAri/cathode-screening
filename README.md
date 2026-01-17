@@ -93,18 +93,18 @@ We utilize **CHGNet** (Crystal Hamiltonian Graph Neural Network, Deng et al., 20
 
 ### Uncertainty Quantification
 We implement **Deep Ensembles** (Lakshminarayanan et al., 2017) to quantify **Epistemic Uncertainty** (model ignorance).
-*   We train $M=5$ models with different random initializations and data shuffles.
-*   **Prediction**: $\mu_* = \frac{1}{M} \sum \mu_m(x)$
-*   **Uncertainty**: $\sigma_*^2 = \frac{1}{M} \sum (\mu_m(x)^2 - \mu_*^2)$
+*   We train **M=5** models with different random initializations and data shuffles.
+*   **Prediction**: μ = (1/M) Σ μ<sub>m</sub>(x)
+*   **Uncertainty**: σ² = (1/M) Σ (μ<sub>m</sub>(x)² − μ²)
 
 ### Decision Policy
 Materials are classified based on a hybrid policy:
 
 | Action | Criterion | Meaning |
 | :--- | :--- | :--- |
-| **RECOMMEND** | $\mu < 0.08$ eV & $\sigma < 0.05$ | High confidence stable. Send to DFT. |
-| **HOLD** | $\sigma > 0.05$ | Model is confused (OOD). Candidate for Active Learning. |
-| **SKIP** | $\mu > 0.15$ eV | Confident unstable. Do not compute. |
+| **KEEP** | μ < 0.05 eV & σ < 0.02 | High confidence stable. Send to DFT. |
+| **MAYBE** | 0.05 ≤ μ ≤ 0.15 or σ > 0.02 | Uncertain. Manual review recommended. |
+| **KILL** | μ > 0.15 eV | Confident unstable. Do not compute. |
 
 ---
 
