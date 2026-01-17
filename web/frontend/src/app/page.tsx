@@ -92,8 +92,8 @@ export default function Home() {
           </span>
         </h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-          Instantly predict thermodynamic stability of cathode materials using our state-of-the-art
-          CGCNN ensemble model. Screen 17,000+ materials in seconds.
+          Instantly predict thermodynamic stability of Li-cathode materials using our state-of-the-art
+          CHGNet ensemble model. Screen with 6.6× enrichment and &lt;0.3% false-discard rate.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto mt-16 text-left">

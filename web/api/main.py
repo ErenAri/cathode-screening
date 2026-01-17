@@ -662,13 +662,23 @@ async def attach_request_id(request: Request, call_next):
 async def startup_event() -> None:
     global _startup_error, _startup_complete
     try:
-        from .inference import get_predictor
+        from .inference import get_predictor, get_model_type
 
         predictor = get_predictor()
-        if not predictor.predictor.models:
-            raise RuntimeError("No ensemble models loaded")
-        if REQUIRE_CALIBRATION and predictor.predictor.calibrator is None:
-            raise RuntimeError("Calibration parameters not loaded")
+        
+        # Check models based on model type
+        model_type = get_model_type()
+        if model_type == "chgnet":
+            # CHGNet adapter uses screener.models
+            if not predictor.screener.models:
+                raise RuntimeError("No CHGNet ensemble models loaded")
+        else:
+            # CGCNN uses predictor.models
+            if not predictor.predictor.models:
+                raise RuntimeError("No ensemble models loaded")
+            if REQUIRE_CALIBRATION and predictor.predictor.calibrator is None:
+                raise RuntimeError("Calibration parameters not loaded")
+        
         _startup_complete = True
         _startup_error = None
     except Exception as exc:

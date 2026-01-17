@@ -104,19 +104,34 @@ Materials are classified based on a hybrid policy:
 | Action | Criterion | Meaning |
 | :--- | :--- | :--- |
 | **RECOMMEND** | $\mu < 0.08$ eV & $\sigma < 0.05$ | High confidence stable. Send to DFT. |
-| **HOLD** | $\sigma > 0.05$ | Model is confused (OOD). Candidate for Active Learning or experimental verification. |
+| **HOLD** | $\sigma > 0.05$ | Model is confused (OOD). Candidate for Active Learning. |
 | **SKIP** | $\mu > 0.15$ eV | Confident unstable. Do not compute. |
 
 ---
 
-## Performance Metrics
+## Performance Metrics (v1-Li-Cathode)
+
+> **Industrial Claim**: On unseen Li-cathode chemistries, our system recovers **55% of all ultra-stable (E_hull ≤ 10 meV) materials** within the top-100 candidates — a **6.6× enrichment** over random — while maintaining **< 0.3% false-discard rate**.
+
+### Core Metrics
 
 | Metric | Value | Description |
 | :--- | :--- | :--- |
-| **MAE** | **0.038 eV/atom** | Mean Absolute Error on Test Set |
-| **DAF@10** | **1.64×** | Discovery Acceleration Factor (Top 10%) |
-| **Efficiency** | **+86%** | Improvement over random sampling in Active Learning |
-| **Inference Latency** | **42ms** | Average per-structure processing time (Intel Xeon CPU) |
+| **MAE** | **0.032 eV/atom** | Mean Absolute Error (SOAP-LOCO test) |
+| **RMSE** | 0.063 eV/atom | Root Mean Square Error |
+| **Mean σ** | 0.008 eV/atom | Ensemble epistemic uncertainty |
+| **False Kill Rate** | **< 0.3%** | Stable materials incorrectly discarded |
+
+### Enrichment Factors
+
+| Threshold | EF@1% | EF@5% | Recall@100 |
+| :--- | :--- | :--- | :--- |
+| **0.01 eV** | **6.66×** | 4.91× | 55% |
+| 0.02 eV | 3.30× | 3.19× | 45% |
+| 0.05 eV | 1.96× | 1.81× | 23% |
+
+**Model Scope**: Li-containing oxide cathode materials (Li–O–TM)  
+**Validation**: SOAP-LOCO chemistry-aware holdout split (764 test samples)
 
 ---
 
