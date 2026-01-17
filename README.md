@@ -6,7 +6,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat&logo=next.js)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)
 
-**CathodeScreen** is an enterprise-grade machine learning framework designed to accelerate the discovery of thermodynamically stable lithium-ion battery cathode materials. It implements a scalable inference pipeline utilizing a deep ensemble of Crystal Graph Convolutional Neural Networks (CGCNN) to robustly predict energy above hull ($E_{hull}$) with quantified epistemic uncertainty.
+**CathodeScreen** is an enterprise-grade machine learning framework designed to accelerate the discovery of thermodynamically stable lithium-ion battery cathode materials. It implements a scalable inference pipeline utilizing a deep ensemble of **CHGNet** (Crystal Hamiltonian Graph Neural Network) models to robustly predict energy above hull ($E_{hull}$) with quantified epistemic uncertainty.
 
 
 ## Table of Contents
@@ -25,7 +25,7 @@
 
 ## Abstract
 
-The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. By leveraging a specialized graph neural network ensemble trained on 17,227 transition metal oxides, the system identifies thermodynamically stable candidates ($E_{hull} < 0.05$ eV/atom) with a Discovery Acceleration Factor (DAF) of **1.64×** compared to random sampling.
+The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. By leveraging a CHGNet ensemble trained on Li-cathode materials, the system identifies thermodynamically stable candidates ($E_{hull} < 0.05$ eV/atom) with a **6.6× enrichment** over random sampling — while maintaining <0.3% false-discard rate.
 
 ## Problem Statement
 
@@ -50,11 +50,11 @@ graph LR
     Edge -->|API| API(FastAPI Inference)
     subgraph "Inference Engine"
         API -->|Parse| Pymatgen(Structure Parser)
-        Pymatgen -->|Graph| GNN1(CGCNN Model 1)
-        Pymatgen -->|Graph| GNN2(CGCNN Model 2)
-        Pymatgen -->|Graph| GNN3(CGCNN Model 3)
-        Pymatgen -->|Graph| GNN4(CGCNN Model 4)
-        Pymatgen -->|Graph| GNN5(CGCNN Model 5)
+        Pymatgen -->|Graph| GNN1(CHGNet Model 1)
+        Pymatgen -->|Graph| GNN2(CHGNet Model 2)
+        Pymatgen -->|Graph| GNN3(CHGNet Model 3)
+        Pymatgen -->|Graph| GNN4(CHGNet Model 4)
+        Pymatgen -->|Graph| GNN5(CHGNet Model 5)
     end
     GNN1 & GNN2 & GNN3 & GNN4 & GNN5 -->|Aggregator| Stats(Mean & Variance)     
     Stats -->|Policy| Result[Action Recommendation]
@@ -84,13 +84,12 @@ graph LR
     *   Instead of random splitting, we cluster materials by structural similarity (using SOAP descriptors).
     *   We train on $N-1$ clusters and test on the unseen cluster. This mimics the real-world scenario of discovering *new* families of materials, ensuring our metrics are rigorous.
 
-### Model Architecture: CGCNN
-We utilize the **Crystal Graph Convolutional Neural Network** (Xie et al., 2018).
-*   **Input**: Crystal structure converted to a multigraph $G = (V, E)$.
-    *   **Nodes ($v_i$)**: Atom embeddings (atomic number, electronegativity, etc.).
-    *   **Edges ($e_{ij}$)**: Bond distances encoded via Gaussian Basis expansion.
-*   **Update Rule**:
-    $$ v_i^{(t+1)} = v_i^{(t)} + \sum_{j \in N(i)} \sigma(z_{i,j} W_f + b_f) \odot g(z_{i,j} W_s + b_s) $$
+### Model Architecture: CHGNet
+We utilize **CHGNet** (Crystal Hamiltonian Graph Neural Network, Deng et al., 2023) — a universal neural network potential pre-trained on the Materials Project.
+*   **Base Model**: CHGNet v0.3.0 with 412,525 parameters
+*   **Fine-tuning**: Trained on Li-O-TM cathodes with SOAP-LOCO splits
+*   **Ensemble**: 5 models with different random seeds for uncertainty
+*   **Output**: Direct E_hull prediction (not total energy)
 
 ### Uncertainty Quantification
 We implement **Deep Ensembles** (Lakshminarayanan et al., 2017) to quantify **Epistemic Uncertainty** (model ignorance).
@@ -213,6 +212,7 @@ See `docs/production_checklist.md` for a full production readiness checklist.
 ---
 
 ## References
-1.  Xie, T., & Grossman, J. C. (2018). Crystal Graph Convolutional Neural Networks. *Phys. Rev. Lett.*
+1.  Deng, B., et al. (2023). CHGNet: Pretrained universal neural network potential for charge-informed atomistic modelling. *Nature Machine Intelligence*.
 2.  Jain, A., et al. (2013). The Materials Project: A materials genome approach. *APL Mater.*
 3.  Lakshminarayanan, B., et al. (2017). Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles. *NeurIPS*.
+4.  Bartók, A. P., et al. (2013). On representing chemical environments. *Phys. Rev. B*.
