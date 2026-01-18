@@ -12,10 +12,9 @@ export default function About() {
                         CathodeScreen
                     </Link>
                     <nav className="flex items-center gap-8 text-sm font-medium text-gray-600">
-                        <Link href="/" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</Link>
-                        <Link href="/?section=results" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Results</Link>
+                        <Link href="/predict" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</Link>
                         <Link href="/database" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Database</Link>
-                        <Link href="/about" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">About</Link>
+                        <Link href="/about" className="text-blue-600 hover:scale-125 transition-all duration-200">About</Link>
                     </nav>
                     <div className="pl-8 border-l border-gray-200">
                         <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:scale-125 transition-all duration-200 uppercase tracking-wide flex items-center gap-1">
