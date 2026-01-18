@@ -146,11 +146,14 @@ export default function Home() {
           <div className="flex justify-center mb-6">
             <SocialLinks />
           </div>
-          <div className="flex justify-center gap-6 text-sm text-gray-600">
+          <div className="flex justify-center gap-6 text-sm text-gray-600 mb-4">
             <Link href="/about" className="hover:text-blue-600">About</Link>
             <Link href="/predict" className="hover:text-blue-600">Predict</Link>
             <Link href="/database" className="hover:text-blue-600">Database</Link>
           </div>
+          <p className="text-xs text-gray-400 border-t border-gray-200 pt-4">
+            ⚠️ For screening purposes only. DFT validation recommended before synthesis. Model optimized for Li-oxide cathodes.
+          </p>
         </div>
       </footer>
     </div>

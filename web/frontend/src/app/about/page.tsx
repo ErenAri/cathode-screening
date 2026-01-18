@@ -269,11 +269,16 @@ export default function About() {
 
             {/* Footer */}
             <footer className="border-t border-gray-200 bg-gray-50">
-                <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col md:flex-row justify-between items-center">
-                    <p className="text-sm text-gray-500 mb-4 md:mb-0">
-                        CathodeScreen v1-Li-Cathode · Enterprise Material Discovery Platform
+                <div className="max-w-5xl mx-auto px-6 py-8">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-4">
+                        <p className="text-sm text-gray-500 mb-4 md:mb-0">
+                            CathodeScreen v1-Li-Cathode · Enterprise Material Discovery Platform
+                        </p>
+                        <SocialLinks />
+                    </div>
+                    <p className="text-xs text-gray-400 text-center border-t border-gray-200 pt-4">
+                        ⚠️ For screening purposes only. DFT validation recommended before synthesis. Model optimized for Li-oxide cathodes.
                     </p>
-                    <SocialLinks />
                 </div>
             </footer>
         </div>

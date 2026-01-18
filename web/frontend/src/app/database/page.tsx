@@ -243,13 +243,18 @@ export default function Database() {
 
             {/* Footer */}
             <footer className="border-t border-gray-200 mt-16">
-                <div className="max-w-5xl mx-auto px-6 py-6 flex justify-between text-sm text-gray-500">
-                    <p>CathodeScreen · Enterprise Platform</p>
-                    <div className="flex gap-4">
-                        <a href="https://github.com/ErenAri" target="_blank" className="hover:text-gray-900">GitHub</a>
-                        <a href={`${API_BASE_URL}/docs`} target="_blank" className="hover:text-gray-900">API</a>
-                        <Link href="/about" className="hover:text-gray-900">About</Link>
+                <div className="max-w-5xl mx-auto px-6 py-6">
+                    <div className="flex justify-between text-sm text-gray-500 mb-3">
+                        <p>CathodeScreen · Enterprise Platform</p>
+                        <div className="flex gap-4">
+                            <a href="https://github.com/ErenAri" target="_blank" className="hover:text-gray-900">GitHub</a>
+                            <a href={`${API_BASE_URL}/docs`} target="_blank" className="hover:text-gray-900">API</a>
+                            <Link href="/about" className="hover:text-gray-900">About</Link>
+                        </div>
                     </div>
+                    <p className="text-xs text-gray-400 text-center border-t border-gray-100 pt-3">
+                        ⚠️ For screening purposes only. DFT validation recommended before synthesis. Model optimized for Li-oxide cathodes.
+                    </p>
                 </div>
             </footer>
         </div>
