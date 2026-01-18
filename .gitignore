@@ -75,4 +75,12 @@ wandb/
 
 # --- Project Specific ---
 # ALIGNN large format data
+# ALIGNN large format data
 data/alignn_format/
+
+# --- GCP / Training ---
+.venv-training/
+checkpoints/
+outputs/
+build_log*.txt
+
