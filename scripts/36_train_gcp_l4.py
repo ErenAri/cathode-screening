@@ -176,7 +176,7 @@ def train_model(
 def main():
     parser = argparse.ArgumentParser(description="GCP L4 CHGNet Training")
     parser.add_argument("--phase", choices=["pretrain", "finetune", "both"], default="both")
-    parser.add_argument("--mptrj-path", default="data/external/mptrj_full/MPtrj_2022.9_full.json")
+    parser.add_argument("--mptrj-path", default="data/mptrj_full/MPtrj_2022.9_full.json")
     parser.add_argument("--li-cathode-dir", default="data/external")
     parser.add_argument("--max-samples", type=int, default=None)
     args = parser.parse_args()
