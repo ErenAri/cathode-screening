@@ -57,5 +57,5 @@ RUN pip install -r requirements.txt 2>/dev/null || true
 ENV PYTHONUNBUFFERED=1
 ENV CUDA_VISIBLE_DEVICES=0
 
-# Default command: Download data, then train (L4 optimized with sample limit), then upload results
-CMD ["bash", "-c", "python scripts/download_data.py && python scripts/36_train_gcp_l4.py --phase both --max-samples 500000 && python scripts/upload_results.py"]
+# Default command: Download data, then FINE-TUNE ONLY (skips 12GB pretrain data), then upload results
+CMD ["bash", "-c", "python scripts/download_data.py && python scripts/36_train_gcp_l4.py --phase finetune && python scripts/upload_results.py"]
