@@ -1,42 +1,19 @@
-# Git
-.git
+# Cloud Build Ignore File
+.git/
 .gitignore
-
-# Python
-__pycache__
+.gcloudignore
+node_modules/
+__pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.pytest_cache/
-.mypy_cache/
 
-# Data (Ignore raw data, keep predictions needed for app)
-data/*
-!data/predictions
+# Exclude data (downloaded from GCS at runtime)
+data/
+outputs/
+checkpoints/
 
-# VsCode
-.vscode/
+# Exclude virtual envs
+.venv/
+.venv-training/
 
-# Artifacts (Allow models)
-# Artifacts
-artifacts/*
-!artifacts/models
-
-# Frontend
-web/frontend/node_modules
-web/frontend/.next
-web/frontend/out
-web/frontend/build
+# Exclude frontend/web stuff not needed for training
+web/

@@ -1,8 +1,7 @@
-# Dockerfile for GCP CHGNet Training on A100
 # Build: docker build -t gcr.io/cathode-screening/chgnet-training:latest .
 # Push: docker push gcr.io/cathode-screening/chgnet-training:latest
 
-FROM nvidia/cuda:12.1-cudnn8-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -58,5 +57,5 @@ RUN pip install -r requirements.txt 2>/dev/null || true
 ENV PYTHONUNBUFFERED=1
 ENV CUDA_VISIBLE_DEVICES=0
 
-# Default command
-CMD ["python", "scripts/35_train_gcp_a100.py", "--phase", "both"]
+# Default command: Download data, then train, then upload results
+CMD ["bash", "-c", "python scripts/download_data.py && python scripts/35_train_gcp_a100.py --phase both && python scripts/upload_results.py"]
