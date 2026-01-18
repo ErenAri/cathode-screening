@@ -66,17 +66,23 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900">
       {/* Header */}
-      <header className="fixed w-full bg-white/80 backdrop-blur-md z-50 border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold tracking-tight text-gray-900">CathodeScreen</h1>
-
-          <nav className="flex gap-8 text-sm font-medium">
-            <a href="#predict" className="text-blue-600">Predict</a>
-            <a href="#results" className="text-gray-600 hover:text-gray-900">Results</a>
-            <a href="/database" className="text-gray-600 hover:text-gray-900">Database</a>
-            <a href="/about" className="text-gray-600 hover:text-gray-900">About</a>
-            <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-gray-600 hover:text-gray-900">API</a>
+      {/* Header */}
+      <header className="fixed w-full top-4 z-50 flex justify-center pointer-events-none">
+        <div className="bg-white/80 backdrop-blur-md border border-white/50 shadow-lg rounded-full px-8 py-3 flex items-center gap-12 pointer-events-auto">
+          <a href="/" className="font-bold text-gray-900 text-lg tracking-tight hover:text-blue-600 hover:scale-125 transition-all duration-200">
+            CathodeScreen
+          </a>
+          <nav className="flex items-center gap-8 text-sm font-medium text-gray-600">
+            <a href="#predict" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</a>
+            <a href="#results" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Results</a>
+            <a href="/database" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Database</a>
+            <a href="/about" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">About</a>
           </nav>
+          <div className="pl-8 border-l border-gray-200">
+            <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:scale-125 transition-all duration-200 uppercase tracking-wide flex items-center gap-1">
+              API <span className="text-[10px]">↗</span>
+            </a>
+          </div>
         </div>
       </header>
 
@@ -104,13 +110,13 @@ export default function Home() {
           </div>
           <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
             <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center mb-4 text-indigo-600 font-bold">2</div>
-            <h3 className="font-semibold text-lg mb-2">AI Inference</h3>
-            <p className="text-gray-600 text-sm">5-member Graph Neural Network ensemble predicts E<sub>hull</sub> and Uncertainty.</p>
+            <h3 className="font-semibold text-lg mb-2">CHGNet Inference</h3>
+            <p className="text-gray-600 text-sm">5-member CHGNet ensemble predicts E<sub>hull</sub> with calibrated uncertainty.</p>
           </div>
           <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-4 text-green-600 font-bold">3</div>
             <h3 className="font-semibold text-lg mb-2">Get Actionable Insight</h3>
-            <p className="text-gray-600 text-sm">Receive immediate "DFT", "HOLD", or "SKIP" recommendations.</p>
+            <p className="text-gray-600 text-sm">Receive immediate "KEEP", "MAYBE", or "KILL" recommendations.</p>
           </div>
         </div>
       </section>
@@ -252,18 +258,23 @@ export default function Home() {
 
           <div className="grid grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 text-center">
-              <p className="text-4xl font-extrabold text-blue-600 mb-2">1.64×</p>
-              <p className="font-semibold text-gray-900">Discovery Factor</p>
-              <p className="text-xs text-gray-500 mt-2">More effective than random search (DAF@10)</p>
+              <p className="text-4xl font-extrabold text-blue-600 mb-2">6.66×</p>
+              <p className="font-semibold text-gray-900">Enrichment Factor</p>
+              <p className="text-xs text-gray-500 mt-2">EF@1% at E<sub>hull</sub> &lt; 10 meV</p>
             </div>
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 text-center">
-              <p className="text-4xl font-extrabold text-green-600 mb-2">+86%</p>
-              <p className="font-semibold text-gray-900">Efficiency</p>
-              <p className="text-xs text-gray-500 mt-2">Active Learning gain vs. Baseline</p>
+              <p className="text-4xl font-extrabold text-green-600 mb-2">0.032</p>
+              <p className="font-semibold text-gray-900">MAE (eV/atom)</p>
+              <p className="text-xs text-gray-500 mt-2">SOAP-LOCO test set</p>
             </div>
-            <div className="col-span-2 bg-gray-900 p-8 rounded-2xl text-white text-center">
-              <p className="text-3xl font-bold mb-2">17,227</p>
-              <p className="text-gray-400">Materials Learned</p>
+            <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 text-center">
+              <p className="text-4xl font-extrabold text-indigo-600 mb-2">&lt;0.3%</p>
+              <p className="font-semibold text-gray-900">False Kill Rate</p>
+              <p className="text-xs text-gray-500 mt-2">Stable materials retained</p>
+            </div>
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-2xl text-white text-center">
+              <p className="text-3xl font-bold mb-2">11,377</p>
+              <p className="text-gray-400">Li-Cathode Materials</p>
             </div>
           </div>
         </div>

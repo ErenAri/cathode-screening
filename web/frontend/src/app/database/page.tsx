@@ -88,22 +88,27 @@ export default function Database() {
     return (
         <div className="min-h-screen bg-white">
             {/* Header */}
-            <header className="border-b border-gray-200">
-                <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-                    <Link href="/" className="text-xl font-semibold text-gray-900">
+            <header className="fixed w-full top-4 z-50 flex justify-center pointer-events-none">
+                <div className="bg-white/80 backdrop-blur-md border border-white/50 shadow-lg rounded-full px-8 py-3 flex items-center gap-12 pointer-events-auto">
+                    <Link href="/" className="font-bold text-gray-900 text-lg tracking-tight hover:text-blue-600 hover:scale-125 transition-all duration-200">
                         CathodeScreen
                     </Link>
-                    <nav className="flex gap-6 text-sm">
-                        <Link href="/" className="text-gray-600 hover:text-gray-900">Predict</Link>
-                        <Link href="/database" className="text-blue-600 font-medium">Database</Link>
-                        <Link href="/about" className="text-gray-600 hover:text-gray-900">About</Link>
-                        <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-gray-600 hover:text-gray-900">API</a>
+                    <nav className="flex items-center gap-8 text-sm font-medium text-gray-600">
+                        <Link href="/" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</Link>
+                        <Link href="/?section=results" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Results</Link>
+                        <Link href="/database" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Database</Link>
+                        <Link href="/about" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">About</Link>
                     </nav>
+                    <div className="pl-8 border-l border-gray-200">
+                        <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:scale-125 transition-all duration-200 uppercase tracking-wide flex items-center gap-1">
+                            API <span className="text-[10px]">↗</span>
+                        </a>
+                    </div>
                 </div>
             </header>
 
             {/* Main */}
-            <main className="max-w-5xl mx-auto px-6 py-10">
+            <main className="max-w-5xl mx-auto px-6 py-10 pt-32">
                 <div className="flex justify-between items-start mb-6">
                     <div>
                         <h1 className="text-2xl font-semibold text-gray-900 mb-2">
