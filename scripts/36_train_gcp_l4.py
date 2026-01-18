@@ -73,27 +73,29 @@ def load_mptrj_data(mptrj_path: str, max_samples: Optional[int] = None) -> List[
 
 
 def load_li_cathode_data(data_dir: str) -> List[Dict]:
-    """Load Li-cathode subset data from multiple sources."""
-    import pandas as pd
+    """Load Li-cathode training data with full crystal structures."""
     
-    sources = [
-        "oqmd/oqmd_li_cathodes.parquet",
-        "mp_2024/mp_li_cathodes_2024.parquet",
-        "mptrj/mptrj_li_cathodes.parquet",
-        "nomad/nomad_li_cathodes.parquet",
-        "wbm/wbm_li_cathodes.parquet",
-    ]
+    # Try the new training data file first (has actual structures)
+    training_path = Path(data_dir) / "training" / "li_cathode_structures.json"
+    if training_path.exists():
+        print(f"Loading training data from {training_path}...")
+        with open(training_path, 'r') as f:
+            all_data = json.load(f)
+        print(f"Loaded {len(all_data)} structures with energies")
+        return all_data
     
-    all_data = []
-    for source in sources:
-        path = Path(data_dir) / source
-        if path.exists():
-            df = pd.read_parquet(path)
-            all_data.extend(df.to_dict('records'))
-            print(f"  {source}: {len(df)} materials")
+    # Fallback: try pickle file
+    pickle_path = Path(data_dir) / "training" / "li_cathode_structures.pkl"
+    if pickle_path.exists():
+        import pickle
+        print(f"Loading training data from {pickle_path}...")
+        with open(pickle_path, 'rb') as f:
+            all_data = pickle.load(f)
+        print(f"Loaded {len(all_data)} structures with energies")
+        return all_data
     
-    print(f"Total Li-cathode: {len(all_data)}")
-    return all_data
+    print(f"ERROR: No training data found in {data_dir}/training/")
+    return []
 
 
 class MPTrjDataset(Dataset):
