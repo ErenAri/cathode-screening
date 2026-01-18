@@ -119,6 +119,8 @@ def train_model(
     """Train a single CHGNet model."""
     from chgnet.model import CHGNet
     from chgnet.trainer import Trainer
+    from chgnet.data.dataset import StructureData, get_train_val_test_loader
+    from pymatgen.core import Structure
     
     print(f"\n{'='*60}")
     print(f"Training Model {model_idx + 1}/5 (seed={seed}, phase={phase})")
@@ -132,25 +134,73 @@ def train_model(
     model = CHGNet.load()
     model = model.to(DEVICE)
     
-    # Create data splits (90/10)
-    n_val = int(len(data) * 0.1)
-    train_data = data[:-n_val]
-    val_data = data[-n_val:]
+    # Convert data to StructureData format
+    print("  Converting data to StructureData format...")
+    structures = []
+    energies = []
+    forces_list = []
     
-    print(f"  Train: {len(train_data)}, Val: {len(val_data)}")
+    for item in data:
+        try:
+            # Handle different data formats
+            if "structure" in item and isinstance(item["structure"], dict):
+                struct = Structure.from_dict(item["structure"])
+            elif "structure" in item and isinstance(item["structure"], Structure):
+                struct = item["structure"]
+            else:
+                continue
+                
+            energy = item.get("energy_per_atom", item.get("energy", None))
+            if energy is None:
+                continue
+                
+            structures.append(struct)
+            energies.append(energy)
+            
+            # Forces are optional
+            forces = item.get("forces", None)
+            if forces is not None:
+                forces_list.append(forces)
+        except Exception as e:
+            continue
+    
+    print(f"  Converted {len(structures)} structures")
+    
+    if len(structures) < 100:
+        print(f"  WARNING: Only {len(structures)} valid structures. Skipping this model.")
+        return {"model_idx": model_idx, "seed": seed, "phase": phase, "error": "insufficient_data"}
+    
+    # Create dataset
+    dataset = StructureData(
+        structures=structures,
+        energies=energies,
+        forces=forces_list if len(forces_list) == len(structures) else None,
+    )
+    
+    # Create data loaders
+    train_loader, val_loader, test_loader = get_train_val_test_loader(
+        dataset,
+        batch_size=config["batch_size"],
+        train_ratio=0.9,
+        val_ratio=0.1,
+        test_ratio=0.0,
+        num_workers=config["num_workers"],
+        pin_memory=config["pin_memory"],
+    )
+    
+    print(f"  Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     
     # Create trainer
     epochs = config["epochs_pretrain"] if phase == "pretrain" else config["epochs_finetune"]
     
     trainer = Trainer(
         model=model,
-        targets="ef",
+        targets="ef" if forces_list else "e",
         optimizer="AdamW",
         scheduler="CosLR",
         learning_rate=config["learning_rate"],
         weight_decay=config["weight_decay"],
         epochs=epochs,
-        batch_size=config["batch_size"],
         use_device=DEVICE,
     )
     
@@ -159,8 +209,8 @@ def train_model(
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     trainer.train(
-        train_data,
-        val_data,
+        train_loader,
+        val_loader,
         save_dir=str(checkpoint_dir),
     )
     
@@ -168,7 +218,6 @@ def train_model(
         "model_idx": model_idx,
         "seed": seed,
         "phase": phase,
-        "best_mae": trainer.best_model_val_mae,
         "checkpoint": str(checkpoint_dir),
     }
 
