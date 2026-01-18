@@ -26,6 +26,13 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+# Load .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed, use environment variables directly
+
 # Check for MP API
 try:
     from mp_api.client import MPRester
