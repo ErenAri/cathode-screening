@@ -1,0 +1,21 @@
+{
+  "mae": 0.023749443407101722,
+  "rmse": 0.029984067147917067,
+  "r2": 0.9061447333119348,
+  "ef_1": 2.0408163265306123,
+  "ef_5": 2.0408163265306123,
+  "ef_10": 2.0408163265306123,
+  "recall_100": 0.75,
+  "recall_500": 0.908,
+  "false_kill_rate": 0.7959183673469388,
+  "false_positive_rate": 0.0,
+  "stability_auc": 0.9734093637454982,
+  "precision_at_10": 1.0,
+  "precision_at_50": 1.0,
+  "precision_at_100": 1.0,
+  "ndcg": 0.34183125888515226,
+  "calibration_ece": 0.0125385513773426,
+  "ood_detection_auc": null,
+  "baseline_mae": null,
+  "improvement_vs_baseline": null
+}

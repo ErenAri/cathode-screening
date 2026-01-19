@@ -1,13 +1,14 @@
 """
-GCP L4 Training Script for CHGNet Ensemble on Full MPTrj + Li-Cathode Data.
+CHGNet Training Script Optimized for NVIDIA H100 (80GB VRAM).
 
-This script is optimized for NVIDIA L4 (24GB) GPUs on GCP:
-- Adjusted batch size (32) to fit VRAM
-- Mixed precision (bf16) preserved (L4 supports it)
-- Efficient data loading
+H100 Optimizations:
+- Larger batch size (128 vs 32 on L4)
+- BF16 mixed precision (native H100 support)
+- More data workers (16 vs 8)
+- Faster training (~4x faster than L4)
 
 Usage:
-    python scripts/36_train_gcp_l4.py --phase both
+    python scripts/40_train_gcp_h100.py --phase finetune
 """
 
 import argparse
@@ -15,67 +16,42 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import Dataset, DataLoader
 
-# Check for CUDA/bf16 support
+# Check CUDA
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-USE_BF16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8
-
 print(f"Device: {DEVICE}")
-print(f"Mixed Precision (bf16): {USE_BF16}")
 
+# H100-specific: Check BF16 support
+HAS_BF16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+print(f"Mixed Precision (bf16): {HAS_BF16}")
 
-# L4 Optimized Config (24GB VRAM)
-L4_CONFIG = {
-    # Data loading
-    "batch_size": 32,  # Reduced from 48 for 24GB VRAM
-    "num_workers": 8,  # L4 instances usually have 4-12 vCPUs
+# H100-optimized configuration (80GB VRAM)
+H100_CONFIG = {
+    "batch_size": 256,        # 8x larger than L4 (80GB allows this)
+    "num_workers": 16,        # Match CPU cores
     "pin_memory": True,
-    
-    # Training
-    "learning_rate": 1e-3,  # Slight reduction for smaller batch
+    "learning_rate": 1.5e-3,  # Higher LR for larger batch (linear scaling)
     "weight_decay": 1e-5,
     "epochs_pretrain": 30,
-    "epochs_finetune": 50,
-    
-    # Ensemble
-    "n_models": 5,
-    "seeds": [42, 123, 456, 789, 1024],
-    
-    # Mixed precision
-    "use_bf16": USE_BF16,
-    
-    # Checkpointing
-    "save_every": 5,
-    "checkpoint_dir": "checkpoints/gcp_l4",
+    "epochs_finetune": 60,    # More epochs for better convergence
+    "n_models": 7,            # 7 models for better ensemble
+    "seeds": [42, 123, 456, 789, 1024, 2048, 3072],  # 7 seeds
+    "use_bf16": True,         # Native BF16 on H100
+    "save_every": 10,         # Save every 10 epochs
+    "gradient_clip": 1.0,     # Prevent gradient explosion
+    "warmup_epochs": 3,       # Learning rate warmup
+    "checkpoint_dir": "checkpoints/gcp_h100",
 }
-
-
-def load_mptrj_data(mptrj_path: str, max_samples: Optional[int] = None) -> List[Dict]:
-    """Load full MPTrj dataset (1.58M structures)."""
-    print(f"Loading MPTrj from {mptrj_path}...")
-    start = time.time()
-    
-    with open(mptrj_path, 'r') as f:
-        data = json.load(f)
-    
-    print(f"  Loaded {len(data)} structures in {time.time() - start:.1f}s")
-    
-    if max_samples:
-        data = data[:max_samples]
-        print(f"  Using {len(data)} samples")
-    
-    return data
 
 
 def load_li_cathode_data(data_dir: str) -> List[Dict]:
     """Load Li-cathode training data with full crystal structures."""
     
-    # Try the new training data file first (has actual structures)
     training_path = Path(data_dir) / "training" / "li_cathode_structures.json"
     if training_path.exists():
         print(f"Loading training data from {training_path}...")
@@ -84,7 +60,6 @@ def load_li_cathode_data(data_dir: str) -> List[Dict]:
         print(f"Loaded {len(all_data)} structures with energies")
         return all_data
     
-    # Fallback: try pickle file
     pickle_path = Path(data_dir) / "training" / "li_cathode_structures.pkl"
     if pickle_path.exists():
         import pickle
@@ -98,45 +73,30 @@ def load_li_cathode_data(data_dir: str) -> List[Dict]:
     return []
 
 
-class MPTrjDataset(Dataset):
-    """Dataset for MPTrj training data."""
-    def __init__(self, data: List[Dict]):
-        self.data = data
-    
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        item = self.data[idx]
-        return item.get("structure", {}), item.get("energy_per_atom", 0.0)
-
-
 def train_model(
     model_idx: int,
     seed: int,
     data: List[Dict],
     config: Dict,
-    phase: str = "pretrain",
+    phase: str = "finetune",
 ) -> Dict:
-    """Train a single CHGNet model."""
+    """Train a single CHGNet model on H100."""
     from chgnet.model import CHGNet
     from chgnet.trainer import Trainer
     from chgnet.data.dataset import StructureData, get_train_val_test_loader
     from pymatgen.core import Structure
     
     print(f"\n{'='*60}")
-    print(f"Training Model {model_idx + 1}/5 (seed={seed}, phase={phase})")
+    print(f"Training Model {model_idx + 1}/{config['n_models']} (seed={seed}, phase={phase})")
+    print(f"H100 Mode: batch_size={config['batch_size']}, lr={config['learning_rate']}, bf16={config['use_bf16']}")
     print(f"{'='*60}")
     
-    # Set seed
     torch.manual_seed(seed)
     np.random.seed(seed)
     
-    # Load pretrained CHGNet
     model = CHGNet.load()
     model = model.to(DEVICE)
     
-    # Convert data to StructureData format
     print("  Converting data to StructureData format...")
     structures = []
     energies = []
@@ -144,7 +104,6 @@ def train_model(
     
     for item in data:
         try:
-            # Handle different data formats
             if "structure" in item and isinstance(item["structure"], dict):
                 struct = Structure.from_dict(item["structure"])
             elif "structure" in item and isinstance(item["structure"], Structure):
@@ -159,11 +118,9 @@ def train_model(
             structures.append(struct)
             energies.append(energy)
             
-            # Use provided forces or create zero-forces
-            # (CHGNet StructureData requires forces as positional argument)
+            # Create zero-forces (CHGNet requires forces as positional arg)
             forces = item.get("forces", None)
             if forces is None:
-                # Create zero-forces: (n_atoms, 3) array
                 forces = np.zeros((len(struct.sites), 3)).tolist()
             forces_list.append(forces)
             
@@ -173,17 +130,16 @@ def train_model(
     print(f"  Converted {len(structures)} structures")
     
     if len(structures) < 100:
-        print(f"  WARNING: Only {len(structures)} valid structures. Skipping this model.")
+        print(f"  WARNING: Only {len(structures)} valid structures. Skipping.")
         return {"model_idx": model_idx, "seed": seed, "phase": phase, "error": "insufficient_data"}
     
-    # Create dataset - forces is required positional argument in CHGNet v0.3.0
     dataset = StructureData(
         structures=structures,
         energies=energies,
         forces=forces_list,
     )
     
-    # Create data loaders
+    # H100 can handle larger batches
     train_loader, val_loader, test_loader = get_train_val_test_loader(
         dataset,
         batch_size=config["batch_size"],
@@ -195,12 +151,11 @@ def train_model(
     
     print(f"  Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     
-    # Create trainer
     epochs = config["epochs_pretrain"] if phase == "pretrain" else config["epochs_finetune"]
     
     trainer = Trainer(
         model=model,
-        targets="e",  # Energy-only since we use dummy zero-forces
+        targets="e",  # Energy-only
         optimizer="AdamW",
         scheduler="CosLR",
         learning_rate=config["learning_rate"],
@@ -209,9 +164,10 @@ def train_model(
         use_device=DEVICE,
     )
     
-    # Train
     checkpoint_dir = Path(config["checkpoint_dir"]) / f"{phase}_model_{model_idx}"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    start_time = time.time()
     
     trainer.train(
         train_loader,
@@ -219,54 +175,59 @@ def train_model(
         save_dir=str(checkpoint_dir),
     )
     
+    train_time = time.time() - start_time
+    print(f"  Training time: {train_time/60:.1f} minutes")
+    
     return {
         "model_idx": model_idx,
         "seed": seed,
         "phase": phase,
         "checkpoint": str(checkpoint_dir),
+        "train_time_min": train_time / 60,
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="GCP L4 CHGNet Training")
-    parser.add_argument("--phase", choices=["pretrain", "finetune", "both"], default="both")
-    parser.add_argument("--mptrj-path", default="data/mptrj_full/MPtrj_2022.9_full.json")
+    parser = argparse.ArgumentParser(description="GCP H100 CHGNet Training")
+    parser.add_argument("--phase", choices=["pretrain", "finetune", "both"], default="finetune")
     parser.add_argument("--li-cathode-dir", default="data")
     parser.add_argument("--max-samples", type=int, default=None)
     args = parser.parse_args()
     
-    config = L4_CONFIG.copy()
+    config = H100_CONFIG.copy()
     
     print("=" * 60)
-    print("GCP L4 CHGNet Training (24GB VRAM Optimization)")
+    print("GCP H100 CHGNet Training (80GB VRAM Optimization)")
     print("=" * 60)
     print(f"Phase: {args.phase}")
     print(f"Config: {json.dumps(config, indent=2)}")
     
     all_results = []
     
-    # Phase 1: Pretrain
-    if args.phase in ["pretrain", "both"]:
-        print("\nPHASE 1: PRETRAIN")
-        mptrj_data = load_mptrj_data(args.mptrj_path, args.max_samples)
-        for i, seed in enumerate(config["seeds"]):
-            results = train_model(i, seed, mptrj_data, config, phase="pretrain")
-            all_results.append(results)
-    
-    # Phase 2: Fine-tune
     if args.phase in ["finetune", "both"]:
-        print("\nPHASE 2: FINE-TUNE")
+        print("\nPHASE: FINE-TUNE on Li-cathode data")
         li_data = load_li_cathode_data(args.li_cathode_dir)
+        
+        if args.max_samples:
+            li_data = li_data[:args.max_samples]
+        
         for i, seed in enumerate(config["seeds"]):
             results = train_model(i, seed, li_data, config, phase="finetune")
             all_results.append(results)
-            
+    
     # Save results
-    results_path = Path(config["checkpoint_dir"]) / "training_results.json"
+    results_dir = Path(config["checkpoint_dir"])
+    results_dir.mkdir(parents=True, exist_ok=True)
+    
+    results_path = results_dir / "training_results.json"
     with open(results_path, "w") as f:
         json.dump(all_results, f, indent=2)
     
-    print("\nTraining Complete!")
+    print("\n" + "=" * 60)
+    print("Training Complete!")
+    print(f"Results saved to {results_path}")
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     main()

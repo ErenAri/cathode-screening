@@ -1,0 +1,60 @@
+# H100-optimized Dockerfile for CHGNet Training
+# Uses same base as L4 but with H100-specific training script
+
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python and essentials
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    python3.10-dev \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlinks
+RUN ln -s /usr/bin/python3.10 /usr/bin/python
+
+# Install PyTorch with CUDA 12.1 support (H100 optimized)
+RUN pip install --no-cache-dir \
+    torch==2.1.0 \
+    torchvision==0.16.0 \
+    torchaudio==2.1.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Install CHGNet and scientific packages
+RUN pip install --no-cache-dir \
+    chgnet \
+    pymatgen \
+    numpy \
+    pandas \
+    scikit-learn \
+    tqdm \
+    mp-api \
+    python-dotenv \
+    tensorboard \
+    wandb \
+    pyarrow
+
+# Install Google Cloud Storage client
+RUN pip install --no-cache-dir google-cloud-storage
+
+WORKDIR /app
+
+# Copy all scripts and source
+COPY scripts/ /app/scripts/
+COPY src/ /app/src/
+COPY requirements.txt /app/
+
+# Install any remaining requirements
+RUN pip install -r requirements.txt 2>/dev/null || true
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV CUDA_VISIBLE_DEVICES=0
+
+# H100-specific: Use the H100 training script
+CMD ["bash", "-c", "python scripts/download_data.py && python scripts/40_train_gcp_h100.py --phase finetune && python scripts/upload_results_h100.py"]

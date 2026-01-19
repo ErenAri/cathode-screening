@@ -1,0 +1,14 @@
+# Cloud Build configuration for H100 training image
+steps:
+  # Build the Docker image for H100
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/chgnet-training-h100:latest', '-f', 'Dockerfile.h100', '.']
+  
+  # Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/chgnet-training-h100:latest']
+
+images:
+  - 'gcr.io/$PROJECT_ID/chgnet-training-h100:latest'
+
+timeout: '1800s'  # 30 minutes max
