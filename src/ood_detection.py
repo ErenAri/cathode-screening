@@ -88,6 +88,58 @@ class OODDetector:
         cov = np.cov(embeddings.T)
         cov += np.eye(cov.shape[0]) * 1e-6  # Regularization
         self.training_cov_inv = np.linalg.inv(cov)
+
+    def calibrate_threshold_from_validation(
+        self,
+        validation_structures: List[Structure],
+        validation_predictions: List[List[float]],
+        validation_embeddings: Optional[List[np.ndarray]] = None,
+        quantile: float = 0.95,
+        min_samples: int = 50,
+    ) -> float:
+        """
+        Calibrate the OOD threshold using validation data.
+
+        Uses a quantile of validation OOD scores with guards for small samples.
+        """
+        if len(validation_structures) != len(validation_predictions):
+            raise ValueError("validation_structures and validation_predictions must have same length")
+        if validation_embeddings is not None and len(validation_embeddings) != len(validation_structures):
+            raise ValueError("validation_embeddings must match validation_structures length")
+
+        scores = []
+        for idx, structure in enumerate(validation_structures):
+            preds = validation_predictions[idx]
+            emb = validation_embeddings[idx] if validation_embeddings is not None else None
+            has_unseen, _ = self.check_elements(structure)
+            variance = self.ensemble_variance(preds)
+            distance = self.mahalanobis_distance(emb) if emb is not None else 0.0
+            score = self.compute_ood_score(variance, distance, has_unseen)
+            scores.append(score)
+
+        return self._set_threshold_from_scores(scores, quantile=quantile, min_samples=min_samples)
+
+    def _set_threshold_from_scores(
+        self,
+        scores: List[float],
+        quantile: float = 0.95,
+        min_samples: int = 50,
+    ) -> float:
+        """
+        Set threshold from score distribution with safety guards.
+        """
+        scores_arr = np.array(scores, dtype=np.float32)
+        scores_arr = scores_arr[np.isfinite(scores_arr)]
+        if scores_arr.size < min_samples:
+            return self.ood_threshold
+
+        thresh = float(np.quantile(scores_arr, quantile))
+        if not np.isfinite(thresh):
+            return self.ood_threshold
+
+        thresh = max(0.0, min(1.0, thresh))
+        self.ood_threshold = thresh
+        return thresh
     
     def mahalanobis_distance(self, embedding: np.ndarray) -> float:
         """
