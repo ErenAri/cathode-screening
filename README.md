@@ -135,6 +135,29 @@ Materials are classified based on a hybrid policy:
 
 ---
 
+## H100 Training Runs (Vertex AI)
+
+Recent CHGNet training and evaluation jobs on H100 (Vertex AI custom jobs):
+
+| Job Name | Duration |
+| :--- | :--- |
+| chgnet-h100-ensemble-oqmd-v1 | 4h 46m |
+| chgnet-ehull-h100-oqmd-v1 | 53m 15s |
+| chgnet-ehull-h100-ens-v1 | 3h 15m |
+| chgnet-ehull-h100-v1 | 40m 12s |
+| chgnet-training-h100-v1 | 11h 43m |
+
+These runs provide the H100 training baseline referenced by the grounded-win reports in `reports/`.
+
+Job config summary (from `gcp/custom_job_ehull_h100*.yaml` and `scripts/40_train_gcp_h100.py` defaults):
+
+- chgnet-ehull-h100-v1 / chgnet-ehull-h100-oqmd-v1: `scripts/21_finetune_chgnet_v3.py`; epochs 60; batch 128; lr 1e-3; data `/app/data/processed/merged_dataset`; output `/app/checkpoints/gcp_h100/ehull_oqmd_v1`.
+- chgnet-ehull-h100-ens-v1 / chgnet-h100-ensemble-oqmd-v1: `scripts/24_train_chgnet_ensemble.py`; epochs 60; batch 128; lr 1e-3; output `/app/checkpoints/gcp_h100/ehull_oqmd_ens_v1`.
+- chgnet-ehull-h100-ens-v1 (eval): `scripts/42_run_grounded_win.py`; batch 64; `CATHODE_DEVICE=cuda`; `CATHODE_CALIBRATOR_MODE=mu`.
+- chgnet-training-h100-v1: `scripts/40_train_gcp_h100.py`; pretrain 30 / finetune 60; batch 256; lr 1.5e-3; 7-model ensemble; bf16; warmup 3.
+
+---
+
 ## Installation & Deployment
 
 ### Option 1: Docker (Recommended)
