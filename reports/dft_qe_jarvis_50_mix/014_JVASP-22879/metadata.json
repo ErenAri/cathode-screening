@@ -1,0 +1,12 @@
+{
+  "rank": 14,
+  "jarvis_id": "JVASP-22879",
+  "formula": "Li2ZnSiO4",
+  "p_stable": 0.6766647577566721,
+  "mu": -0.022521686553955,
+  "sigma": 0.0006436645756969,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\014_JVASP-22879"
+}

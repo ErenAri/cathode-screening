@@ -1,0 +1,12 @@
+{
+  "rank": 35,
+  "jarvis_id": "JVASP-9783",
+  "formula": "Li2TiSiO5",
+  "p_stable": 0.6345624774472479,
+  "mu": -0.0078807830810546,
+  "sigma": 0.0012707981836734,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\035_JVASP-9783"
+}

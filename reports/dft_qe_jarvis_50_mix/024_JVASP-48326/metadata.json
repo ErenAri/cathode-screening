@@ -1,0 +1,12 @@
+{
+  "rank": 24,
+  "jarvis_id": "JVASP-48326",
+  "formula": "NaLiMnPCO7",
+  "p_stable": 0.6531038846962868,
+  "mu": -0.0142244338989257,
+  "sigma": 0.0012281217157247,
+  "e_hull": 0.0119,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\024_JVASP-48326"
+}

@@ -1,0 +1,12 @@
+{
+  "rank": 44,
+  "jarvis_id": "JVASP-48483",
+  "formula": "Li2Ni3TeO8",
+  "p_stable": 0.629163571964193,
+  "mu": -0.0060601234436035,
+  "sigma": 0.0031622216369336,
+  "e_hull": 0.012,
+  "is_stable": true,
+  "selection": "borderline",
+  "path": "reports\\dft_qe_jarvis_50_mix\\044_JVASP-48483"
+}

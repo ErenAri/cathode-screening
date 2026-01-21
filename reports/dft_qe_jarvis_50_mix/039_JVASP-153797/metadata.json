@@ -1,0 +1,12 @@
+{
+  "rank": 39,
+  "jarvis_id": "JVASP-153797",
+  "formula": "Li2FeSiO4",
+  "p_stable": 0.6313592405641414,
+  "mu": -0.0067992210388183,
+  "sigma": 0.0025645775041608,
+  "e_hull": 0.0461,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\039_JVASP-153797"
+}

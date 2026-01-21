@@ -1,0 +1,12 @@
+{
+  "rank": 13,
+  "jarvis_id": "JVASP-121704",
+  "formula": "K2LiVO4",
+  "p_stable": 0.6822429764794545,
+  "mu": -0.0245307922363281,
+  "sigma": 0.0040273787696794,
+  "e_hull": 0.0001,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\013_JVASP-121704"
+}

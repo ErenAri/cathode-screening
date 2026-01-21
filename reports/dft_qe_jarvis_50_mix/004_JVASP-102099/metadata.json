@@ -1,0 +1,12 @@
+{
+  "rank": 4,
+  "jarvis_id": "JVASP-102099",
+  "formula": "Li2Ti2Sb2O",
+  "p_stable": 0.995122381154934,
+  "mu": -0.3817649841308593,
+  "sigma": 0.0234787756233173,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\004_JVASP-102099"
+}

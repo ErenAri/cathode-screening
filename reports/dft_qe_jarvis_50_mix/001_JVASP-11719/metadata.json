@@ -1,0 +1,12 @@
+{
+  "rank": 1,
+  "jarvis_id": "JVASP-11719",
+  "formula": "LiCo(CO)4",
+  "p_stable": 0.9999999501225024,
+  "mu": -1.283495807647705,
+  "sigma": 0.054922381701415,
+  "e_hull": 0.2646,
+  "is_stable": false,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\001_JVASP-11719"
+}

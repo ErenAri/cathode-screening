@@ -1,0 +1,12 @@
+{
+  "rank": 16,
+  "jarvis_id": "JVASP-88720",
+  "formula": "K11LiMn4O16",
+  "p_stable": 0.6751677857127019,
+  "mu": -0.0219856262207031,
+  "sigma": 0.0022127004134124,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\016_JVASP-88720"
+}

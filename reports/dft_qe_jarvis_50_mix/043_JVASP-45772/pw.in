@@ -1,0 +1,68 @@
+&CONTROL
+  calculation = 'relax',
+  restart_mode = 'from_scratch',
+  outdir = './out',
+  pseudo_dir = '../pseudos',
+  verbosity = 'high',
+/
+&SYSTEM
+  ibrav = 0,
+  nat = 21,
+  ntyp = 5,
+  ecutwfc = 100.0,
+  ecutrho = 1080.0,
+  occupations = 'smearing',
+  smearing = 'mp',
+  degauss = 0.0200,
+  nspin = 2,
+  starting_magnetization(1) = 0.00,
+  starting_magnetization(2) = 0.30,
+  starting_magnetization(3) = 0.50,
+  starting_magnetization(4) = 0.00,
+  starting_magnetization(5) = 0.00,
+/
+&ELECTRONS
+  conv_thr = 1.0d-6,
+  mixing_beta = 0.7,
+/
+&IONS
+  ion_dynamics = 'bfgs',
+/
+
+ATOMIC_SPECIES
+  Li 6.9410 li_pbe_v1.4.uspp.F.UPF
+  V 50.9415 v_pbe_v1.4.uspp.F.UPF
+  Cr 51.9961 cr_pbe_v1.5.uspp.F.UPF
+  P 30.9738 P.pbe-n-rrkjus_psl.1.0.0.UPF
+  O 15.9994 O.pbe-n-kjpaw_psl.0.1.UPF
+
+ATOMIC_POSITIONS crystal
+  Li 0.15795798 0.67406645 0.63288020
+  V 0.77953606 0.27001768 0.49211535
+  Cr 0.21328170 0.72705851 0.00073457
+  P 0.59804279 0.48413708 0.82342017
+  P 0.79322635 0.90945651 0.21890771
+  P 0.22305917 0.09153011 0.72204938
+  P 0.39324991 0.51865590 0.31397953
+  O 0.16197287 0.48613738 0.45150220
+  O 0.26951107 0.51283505 0.13843096
+  O 0.38333330 0.60697814 0.81224782
+  O 0.60268312 0.90565390 0.06439323
+  O 0.60900751 0.74209349 0.35336679
+  O 0.41244886 0.25100206 0.85707284
+  O 0.74144132 0.48484113 0.65049529
+  O 0.57442075 0.37261871 0.33074446
+  O 0.12271716 0.88819725 0.80846382
+  O 0.81930789 0.54207694 0.96454875
+  O 0.86742442 0.10550383 0.32280477
+  O 0.96756524 0.16505343 0.66738350
+  O 0.41366287 0.07971256 0.57049385
+  O 0.07218347 0.85953345 0.18198602
+
+CELL_PARAMETERS angstrom
+  4.81667681 0.00095903 0.01781867
+  -2.14464927 -6.60923939 0.02175946
+  -0.07020333 0.04675687 -7.96355032
+
+K_POINTS automatic
+  5 4 3 0 0 0

@@ -1,0 +1,12 @@
+{
+  "rank": 8,
+  "jarvis_id": "JVASP-154550",
+  "formula": "LiFeMoClO4",
+  "p_stable": 0.7025978713440383,
+  "mu": -0.032029914855957,
+  "sigma": 0.0045090075332526,
+  "e_hull": 0.0207,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\008_JVASP-154550"
+}

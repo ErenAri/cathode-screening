@@ -1,0 +1,12 @@
+{
+  "rank": 3310,
+  "jarvis_id": "JVASP-133661",
+  "formula": "Li5Fe3(CuO5)2",
+  "p_stable": 0.1586774860492561,
+  "mu": 0.1662562370300292,
+  "sigma": 0.0030562236951621,
+  "e_hull": 0.139,
+  "is_stable": false,
+  "selection": "random",
+  "path": "reports\\dft_qe_jarvis_50_mix\\3310_JVASP-133661"
+}

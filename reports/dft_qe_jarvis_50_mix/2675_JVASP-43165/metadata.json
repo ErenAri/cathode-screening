@@ -1,0 +1,12 @@
+{
+  "rank": 2675,
+  "jarvis_id": "JVASP-43165",
+  "formula": "Li2MnV3O8",
+  "p_stable": 0.3091215876798598,
+  "mu": 0.0984922409057617,
+  "sigma": 0.0053843522578998,
+  "e_hull": 0.0395,
+  "is_stable": true,
+  "selection": "random",
+  "path": "reports\\dft_qe_jarvis_50_mix\\2675_JVASP-43165"
+}

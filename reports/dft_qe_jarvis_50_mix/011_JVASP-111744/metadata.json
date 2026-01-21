@@ -1,0 +1,12 @@
+{
+  "rank": 11,
+  "jarvis_id": "JVASP-111744",
+  "formula": "LiEu(WO4)2",
+  "p_stable": 0.6915955585917728,
+  "mu": -0.0279422760009765,
+  "sigma": 0.0041451361998478,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\011_JVASP-111744"
+}

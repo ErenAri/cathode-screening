@@ -1,0 +1,12 @@
+{
+  "rank": 76,
+  "jarvis_id": "JVASP-97999",
+  "formula": "LiV(SiO3)2",
+  "p_stable": 0.6131935835236969,
+  "mu": -0.0007359504699707,
+  "sigma": 0.0024443527337716,
+  "e_hull": 0.0125,
+  "is_stable": true,
+  "selection": "random",
+  "path": "reports\\dft_qe_jarvis_50_mix\\076_JVASP-97999"
+}

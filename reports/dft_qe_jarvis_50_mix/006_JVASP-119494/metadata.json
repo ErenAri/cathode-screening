@@ -1,0 +1,12 @@
+{
+  "rank": 6,
+  "jarvis_id": "JVASP-119494",
+  "formula": "LiCuRu2(RhO4)2",
+  "p_stable": 0.7447604505037791,
+  "mu": -0.0485938072204589,
+  "sigma": 0.0075479989005337,
+  "e_hull": 0.0455,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\006_JVASP-119494"
+}

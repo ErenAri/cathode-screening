@@ -1,0 +1,12 @@
+{
+  "rank": 43,
+  "jarvis_id": "JVASP-45772",
+  "formula": "LiVCr(P2O7)2",
+  "p_stable": 0.6296674931320934,
+  "mu": -0.0062295913696289,
+  "sigma": 0.0007221159705505,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "borderline",
+  "path": "reports\\dft_qe_jarvis_50_mix\\043_JVASP-45772"
+}

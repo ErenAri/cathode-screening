@@ -1,0 +1,8 @@
+{
+  "calculation": "relax",
+  "kspacing": 0.25,
+  "ecutwfc": 100.0,
+  "ecutrho": 1080.0,
+  "degauss": 0.02,
+  "pseudo_map": "reports\\dft_qe_jarvis_50_mix\\pseudos.json"
+}

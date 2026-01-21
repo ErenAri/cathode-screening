@@ -1,0 +1,12 @@
+{
+  "rank": 15,
+  "jarvis_id": "JVASP-48629",
+  "formula": "LiCoCuO4",
+  "p_stable": 0.6759128600219035,
+  "mu": -0.0222522735595703,
+  "sigma": 0.0025204420801267,
+  "e_hull": 0.0582,
+  "is_stable": false,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\015_JVASP-48629"
+}

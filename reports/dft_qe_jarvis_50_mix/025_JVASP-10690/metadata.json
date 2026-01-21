@@ -1,0 +1,12 @@
+{
+  "rank": 25,
+  "jarvis_id": "JVASP-10690",
+  "formula": "LiNdTiO4",
+  "p_stable": 0.6515081818630379,
+  "mu": -0.0136725425720214,
+  "sigma": 0.0033566212183658,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\025_JVASP-10690"
+}

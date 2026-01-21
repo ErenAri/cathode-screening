@@ -1,0 +1,1 @@
+QE batch instructions\n1) Copy UPF files into ./pseudos and update pseudos.json if needed.\n2) Run: python check_pseudos.py\n3) Local run: PW_CMD='pw.x' bash run_all_qe.sh\n4) SLURM: sbatch submit_slurm_array.sh\n

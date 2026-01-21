@@ -1,0 +1,12 @@
+{
+  "rank": 40,
+  "jarvis_id": "JVASP-91495",
+  "formula": "Na2Li3FeO4",
+  "p_stable": 0.6307710474837326,
+  "mu": -0.0066010475158691,
+  "sigma": 0.0024860539244874,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\040_JVASP-91495"
+}

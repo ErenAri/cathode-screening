@@ -1,0 +1,12 @@
+{
+  "rank": 29,
+  "jarvis_id": "JVASP-34836",
+  "formula": "Li(CoO2)2",
+  "p_stable": 0.6480775860848309,
+  "mu": -0.0124899864196777,
+  "sigma": 0.0015556202792508,
+  "e_hull": 0.0,
+  "is_stable": true,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\029_JVASP-34836"
+}

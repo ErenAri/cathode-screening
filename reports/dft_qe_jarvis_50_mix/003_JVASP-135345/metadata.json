@@ -1,0 +1,12 @@
+{
+  "rank": 3,
+  "jarvis_id": "JVASP-135345",
+  "formula": "LiTiO",
+  "p_stable": 0.995924372947206,
+  "mu": -0.3959189414978027,
+  "sigma": 0.0932441649487512,
+  "e_hull": 0.6875,
+  "is_stable": false,
+  "selection": "top",
+  "path": "reports\\dft_qe_jarvis_50_mix\\003_JVASP-135345"
+}

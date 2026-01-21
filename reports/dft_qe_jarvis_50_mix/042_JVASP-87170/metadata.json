@@ -1,0 +1,12 @@
+{
+  "rank": 42,
+  "jarvis_id": "JVASP-87170",
+  "formula": "LiMoP2O7",
+  "p_stable": 0.6296862039633062,
+  "mu": -0.0062358856201171,
+  "sigma": 0.0018294082282515,
+  "e_hull": 0.0336,
+  "is_stable": true,
+  "selection": "borderline",
+  "path": "reports\\dft_qe_jarvis_50_mix\\042_JVASP-87170"
+}
