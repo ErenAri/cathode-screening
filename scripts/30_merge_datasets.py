@@ -20,6 +20,7 @@ Usage:
     python scripts/30_merge_datasets.py
 """
 
+import argparse
 import json
 import pickle
 from pathlib import Path
@@ -75,6 +76,31 @@ def load_existing_data() -> Tuple[List[Structure], np.ndarray, List[Dict]]:
     return structures, energies, metadata
 
 
+def parse_oqmd_structure(struct_dict: Dict) -> Structure:
+    """Convert OQMD structure dict (unit_cell/sites) into a pymatgen Structure."""
+    lattice = struct_dict.get("unit_cell")
+    sites = struct_dict.get("sites")
+    if lattice is None or sites is None:
+        # Fall back to pymatgen format if available
+        return Structure.from_dict(struct_dict)
+
+    species = []
+    frac_coords = []
+    for site in sites:
+        if "@" not in site:
+            continue
+        elem, coord_str = site.split("@", 1)
+        coords = [float(x) for x in coord_str.strip().split()]
+        if len(coords) != 3:
+            continue
+        species.append(elem.strip())
+        frac_coords.append(coords)
+    if not species:
+        raise ValueError("No valid sites parsed from OQMD structure")
+
+    return Structure(lattice, species, frac_coords, coords_are_cartesian=False)
+
+
 def load_oqmd_data() -> Tuple[List[Structure], List[float], List[Dict]]:
     """Load OQMD data."""
     print("Loading OQMD data...")
@@ -97,16 +123,19 @@ def load_oqmd_data() -> Tuple[List[Structure], List[float], List[Dict]]:
             struct_data = pickle.load(f)
         
         # Map oqmd_id -> structure
-        struct_map = {s["oqmd_id"]: s["structure"] for s in struct_data}
+        struct_map = {int(s["oqmd_id"]): s["structure"] for s in struct_data}
         
         for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing OQMD"):
-            oqmd_id = row["oqmd_id"]
+            oqmd_id = int(row["oqmd_id"])
             if oqmd_id in struct_map:
                 try:
                     # Convert to pymatgen Structure if needed
                     struct = struct_map[oqmd_id]
                     if isinstance(struct, dict):
-                        struct = Structure.from_dict(struct)
+                        if "lattice" in struct:
+                            struct = Structure.from_dict(struct)
+                        else:
+                            struct = parse_oqmd_structure(struct)
                     
                     structures.append(struct)
                     energies.append(row["stability_oqmd"])  # E_hull equivalent
@@ -229,6 +258,61 @@ def deduplicate_structures(
     return unique_structures, np.array(unique_energies), unique_metadata
 
 
+def _structure_key_fast(structure: Structure, decimals: int = 3) -> Tuple:
+    """Create a fast, stable key for approximate deduplication."""
+    sorted_struct = structure.get_sorted_structure()
+    lattice = np.round(sorted_struct.lattice.matrix, decimals=decimals).astype(np.float32)
+    coords = np.round(sorted_struct.frac_coords, decimals=decimals).astype(np.float32)
+    species = tuple(str(sp) for sp in sorted_struct.species)
+    return (
+        sorted_struct.composition.reduced_formula,
+        len(sorted_struct),
+        lattice.tobytes(),
+        coords.tobytes(),
+        species,
+    )
+
+
+def deduplicate_structures_fast(
+    structures: List[Structure],
+    energies: List[float],
+    metadata: List[Dict],
+    decimals: int = 3,
+) -> Tuple[List[Structure], np.ndarray, List[Dict]]:
+    """Fast heuristic deduplication using rounded lattice + fractional coords."""
+    print(f"\nFast deduplicating {len(structures)} structures...")
+
+    unique_structures: List[Structure] = []
+    unique_energies: List[float] = []
+    unique_metadata: List[Dict] = []
+    key_to_index: Dict[Tuple, int] = {}
+
+    for i, (struct, energy, meta) in tqdm(
+        enumerate(zip(structures, energies, metadata)),
+        total=len(structures),
+        desc="Fast deduplicating",
+    ):
+        try:
+            key = _structure_key_fast(struct, decimals=decimals)
+        except Exception:
+            key = ("_fallback", i)
+
+        if key in key_to_index:
+            idx = key_to_index[key]
+            if energy < unique_energies[idx]:
+                unique_structures[idx] = struct
+                unique_energies[idx] = energy
+                unique_metadata[idx] = meta
+        else:
+            key_to_index[key] = len(unique_structures)
+            unique_structures.append(struct)
+            unique_energies.append(energy)
+            unique_metadata.append(meta)
+
+    print(f"  Fast deduped: {len(structures)} -> {len(unique_structures)}")
+    return unique_structures, np.array(unique_energies), unique_metadata
+
+
 def create_train_val_test_split(
     n_samples: int,
     train_ratio: float = 0.8,
@@ -303,6 +387,15 @@ def save_merged_dataset(
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Merge and Deduplicate Datasets")
+    parser.add_argument(
+        "--dedup",
+        choices=["fast", "full", "none"],
+        default="fast",
+        help="Deduplication mode (fast heuristic, full StructureMatcher, or none).",
+    )
+    args = parser.parse_args()
+
     print("=" * 60)
     print("Phase 7C: Merge and Deduplicate Datasets")
     print("=" * 60)
@@ -330,9 +423,21 @@ def main():
         return
     
     # Deduplicate
-    unique_structs, unique_energies, unique_meta = deduplicate_structures(
-        all_structures, all_energies, all_metadata
-    )
+    if args.dedup == "none":
+        unique_structs, unique_energies, unique_meta = (
+            all_structures,
+            np.array(all_energies),
+            all_metadata,
+        )
+        print("Skipping deduplication.")
+    elif args.dedup == "full":
+        unique_structs, unique_energies, unique_meta = deduplicate_structures(
+            all_structures, all_energies, all_metadata
+        )
+    else:
+        unique_structs, unique_energies, unique_meta = deduplicate_structures_fast(
+            all_structures, all_energies, all_metadata
+        )
     
     # Save
     save_merged_dataset(unique_structs, unique_energies, unique_meta)

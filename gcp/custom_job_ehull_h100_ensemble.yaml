@@ -1,0 +1,22 @@
+workerPoolSpecs:
+- replicaCount: 1
+  machineSpec:
+    machineType: a3-highgpu-1g
+    acceleratorType: NVIDIA_H100_80GB
+    acceleratorCount: 1
+  diskSpec:
+    bootDiskType: pd-ssd
+    bootDiskSizeGb: 200
+  containerSpec:
+    imageUri: gcr.io/cathode-screening/chgnet-training-h100:latest
+    command: ["bash", "-c"]
+    args:
+    - >
+      python scripts/download_data.py &&
+      python scripts/24_train_chgnet_ensemble.py
+      --data-dir /app/data/processed/merged_dataset
+      --output-dir /app/checkpoints/gcp_h100/ehull_oqmd_ens_v1
+      --epochs 60
+      --batch-size 128
+      --lr 1e-3 &&
+      python scripts/upload_results_h100.py

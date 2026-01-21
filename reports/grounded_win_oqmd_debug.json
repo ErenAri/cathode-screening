@@ -1,0 +1,14 @@
+{
+  "stable_threshold": 0.05,
+  "n_val": 1728,
+  "n_test": 2269,
+  "val_mean_min": -0.3537158966064453,
+  "val_mean_max": 0.479604434967041,
+  "val_mean_mean": 0.06464240241933751,
+  "val_std_min": 0.00018046723579054295,
+  "val_std_max": 0.0245433086991322,
+  "val_std_mean": 0.002131722468640479,
+  "calibrator_mode": "mu",
+  "calibrator_a": -12.74824700075346,
+  "calibrator_b": 0.45137425259388864
+}

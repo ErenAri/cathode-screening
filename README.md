@@ -25,7 +25,7 @@
 
 ## Abstract
 
-The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. By leveraging a CHGNet ensemble trained on Li-cathode materials, the system identifies thermodynamically stable candidates ($E_{hull} < 0.05$ eV/atom) with a **6.6× enrichment** over random sampling — while maintaining <0.3% false-discard rate.
+The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. By leveraging CHGNet trained on merged Li-cathode datasets (MP + OQMD + MP2024), the system identifies thermodynamically stable candidates ($E_{hull} < 0.05$ eV/atom) with a **26.29x enrichment** at the top 1% on MP test data, and retains positive enrichment on OOD datasets (OQMD: **1.36x**, JARVIS: **1.86x**).
 
 ## Problem Statement
 
@@ -108,29 +108,30 @@ Materials are classified based on a hybrid policy:
 
 ---
 
-## Performance Metrics (v1-Li-Cathode)
+## Performance Metrics (v2-merged)
 
-> **Industrial Claim**: On unseen Li-cathode chemistries, our system recovers **55% of all ultra-stable (E_hull ≤ 10 meV) materials** within the top-100 candidates — a **6.6× enrichment** over random — while maintaining **< 0.3% false-discard rate**.
+> **Summary (MP test, E_hull <= 0.05)**: EF@1% = **26.29x**, Recall@100 = **55.7%**, Precision@100 = **10.1%**, Top-1% hit rate = **50.0%**.
 
-### Core Metrics
+### Grounded Win (MP test set)
 
-| Metric | Value | Description |
-| :--- | :--- | :--- |
-| **MAE** | **0.032 eV/atom** | Mean Absolute Error (SOAP-LOCO test) |
-| **RMSE** | 0.063 eV/atom | Root Mean Square Error |
-| **Mean σ** | 0.008 eV/atom | Ensemble epistemic uncertainty |
-| **False Kill Rate** | **< 0.3%** | Stable materials incorrectly discarded |
+| Metric | Value |
+| :--- | :--- |
+| **EF@1%** | **26.29x [8.10, 46.80]** |
+| **AUPRC** | 0.273 |
+| **Recall@100** | 55.7% [30.8%, 78.9%] |
+| **Precision@100** | 10.1% [4.0%, 16.0%] |
+| **Top-1% Hit Rate** | 50.0% |
+| **Dataset Prevalence** | 1.7% |
 
-### Enrichment Factors
+### OOD Validation (E_hull <= 0.05)
 
-| Threshold | EF@1% | EF@5% | Recall@100 |
-| :--- | :--- | :--- | :--- |
-| **0.01 eV** | **6.66×** | 4.91× | 55% |
-| 0.02 eV | 3.30× | 3.19× | 45% |
-| 0.05 eV | 1.96× | 1.81× | 23% |
+| Dataset | EF@1% | Precision@100 | Top-1% Hit Rate | Prevalence |
+| :--- | :--- | :--- | :--- | :--- |
+| **OQMD** | **1.36x [0.57, 2.27]** | **67.8% [58.0%, 77.0%]** | 31.8% | 23.0% |
+| **JARVIS** | **1.86x [1.52, 2.18]** | **78.0% [70.0%, 86.0%]** | 79.4% | 43.2% |
 
-**Model Scope**: Li-containing oxide cathode materials (Li–O–TM)  
-**Validation**: SOAP-LOCO chemistry-aware holdout split (764 test samples)
+**Model Scope**: Li-containing oxide cathode materials (Li-O-TM)  
+**Validation**: MP SOAP-LOCO splits for in-domain; OQMD + JARVIS for OOD
 
 ---
 
@@ -208,6 +209,27 @@ See `docs/production_checklist.md` for a full production readiness checklist.
 
 - Use `scripts/11_load_test_api.py` to generate baseline latency/error stats for `/predict`.
 - For Cloud Run scaling guidance, see `docs/gcp_scaling.md`.
+
+### DFT Spot Check (Quantum Espresso)
+
+A small DFT audit batch is generated under `reports/dft_qe_jarvis_50_mix` to validate screening results with QE relaxations.
+
+```bash
+cd reports/dft_qe_jarvis_50_mix
+python3 check_pseudos.py
+
+# Sequential
+PW_CMD=pw.x bash run_all_qe.sh
+
+# Parallel on a single VM
+JOBS=4 MPI_PROCS=2 PW_CMD=pw.x bash run_all_qe_parallel.sh
+
+# Slurm
+sbatch submit_slurm_array.sh
+```
+
+Pseudopotentials (SSSP 1.3.0 PBE precision) live in `reports/dft_qe_jarvis_50_mix/pseudos`, and the max cutoffs are recorded in `reports/dft_qe_jarvis_50_mix/settings.json`.
+Large QE outputs are ignored in `.gitignore` so only inputs and metadata stay in version control.
 
 ---
 

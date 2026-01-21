@@ -1,0 +1,9 @@
+{
+  "ef_1pct": "0.39x [0.00, 1.02]",
+  "auprc": "0.160",
+  "recall_100": "2.0% [0.9%, 3.3%]",
+  "precision_100": "10.3% [5.0%, 17.0%]",
+  "random_baseline": "23.7% +/- 3.5%",
+  "dataset_prevalence": "23.0%",
+  "top_1pct_hit_rate": "9.1%"
+}

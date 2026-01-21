@@ -1,97 +1,105 @@
-"""
-Candidate generation utilities with plausibility checks and de-duplication.
-"""
-from __future__ import annotations
+from pymatgen.core import Structure, Composition
+from pymatgen.transformations.standard_transformations import SubstitutionTransformation
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from typing import Dict, List, Tuple, Set
 
-from dataclasses import dataclass, field
-from typing import Iterable, List, Optional
-import hashlib
-
-import numpy as np
-from pymatgen.core import Structure
-
-
-@dataclass(frozen=True)
-class CandidateFilters:
-    require_elements: set[str] = field(default_factory=lambda: {"Li", "O"})
-    require_any_transition_metals: set[str] = field(
-        default_factory=lambda: {"Fe", "Mn", "Co", "Ni", "Ti", "V", "Cr"}
-    )
-    exclude_elements: set[str] = field(default_factory=lambda: {"F", "Cl", "Br", "I", "S", "Se"})
-    min_atoms: int = 5
-    max_atoms: int = 80
-    allow_partial_occupancy: bool = False
-
-
-def structure_hash(structure: Structure) -> str:
-    cif = structure.to(fmt="cif")
-    return hashlib.sha256(cif.encode("utf-8")).hexdigest()
-
-
-def has_partial_occupancy(structure: Structure) -> bool:
-    for site in structure.sites:
-        if len(site.species) != 1 or list(site.species.values())[0] != 1:
-            return True
-    return False
-
-
-def is_plausible(structure: Structure, filters: CandidateFilters) -> bool:
-    elements = {str(specie) for specie in structure.composition.elements}
-
-    if not filters.require_elements.issubset(elements):
-        return False
-    if elements.intersection(filters.exclude_elements):
-        return False
-    if not elements.intersection(filters.require_any_transition_metals):
-        return False
-
-    n_atoms = len(structure)
-    if n_atoms < filters.min_atoms or n_atoms > filters.max_atoms:
-        return False
-    if not filters.allow_partial_occupancy and has_partial_occupancy(structure):
-        return False
-
-    return True
-
-
-def deduplicate_candidates(candidates: Iterable[dict], key: str = "structure_hash") -> List[dict]:
-    seen = set()
-    unique: List[dict] = []
-    for cand in candidates:
-        value = cand.get(key)
-        if value is None:
-            continue
-        if value in seen:
-            continue
-        seen.add(value)
-        unique.append(cand)
-    return unique
-
-
-def generate_candidates(
-    structures: Iterable[Structure],
-    metadata: Optional[Iterable[dict]] = None,
-    filters: Optional[CandidateFilters] = None,
-    dedup_key: str = "structure_hash",
-) -> List[dict]:
-    filters = filters or CandidateFilters()
-    meta_list = list(metadata) if metadata is not None else None
-    structures_list = list(structures)
-
-    if meta_list is not None and len(meta_list) != len(structures_list):
-        raise ValueError("metadata length must match structures length")
-
-    candidates: List[dict] = []
-    for idx, structure in enumerate(structures_list):
-        if not is_plausible(structure, filters):
-            continue
-        entry = {
-            "structure": structure,
-            "formula": structure.composition.reduced_formula,
-            "structure_hash": structure_hash(structure),
+class CandidateGenerator:
+    """
+    Generates candidate structures via substitutional doping.
+    
+    Features:
+    - Substitution with doping fractions
+    - Toy charge plausibility filter
+    - Deduplication by fingerprint
+    """
+    
+    # Toy whitelist (MVP)
+    ALLOWED_ELEMENTS = {
+        "Li", "Na", "O", "Co", "Ni", "Mn", "Fe", "V", "Ti", 
+        "Al", "Mg", "Zn", "Cr", "Zr", "Nb", "Mo"
+    }
+    
+    def __init__(self, doping_fractions: List[float] = [0.05, 0.1, 0.2]):
+        self.doping_fractions = doping_fractions
+        self.seen_fingerprints: Set[Tuple] = set()
+        
+    def generate(
+        self,
+        base_structures: Dict[str, Structure],
+        substitution_map: Dict[str, List[str]],
+        max_candidates: int = 1000
+    ) -> List[Structure]:
+        """
+        Generate candidates by substituting elements in base structures.
+        """
+        candidates = []
+        
+        for base_name, base_struct in base_structures.items():
+            if len(candidates) >= max_candidates: break
+            
+            for site_elem, replacements in substitution_map.items():
+                for replacement in replacements:
+                    for fraction in self.doping_fractions:
+                        try:
+                            new_struct = self._create_doped_structure(
+                                base_struct, site_elem, replacement, fraction
+                            )
+                            
+                            if self._is_plausible(new_struct) and \
+                               self._is_new(new_struct):
+                                candidates.append(new_struct)
+                                
+                        except Exception:
+                            continue
+                            
+        return candidates[:max_candidates]
+    
+    def _create_doped_structure(
+        self, struct: Structure, 
+        target_elem: str, 
+        sub_elem: str, 
+        fraction: float
+    ) -> Structure:
+        """Apply substitution transformation."""
+        # Simple random substitution on species
+        # Note: robust implementation requires supercells for small fractions
+        # MVP: simple Probability-based replacement if supported or explicit site finding
+        
+        # Pymatgen SubstitutionTransformation using dict fraction
+        # e.g., {"Co": {"Co": 0.9, "Ni": 0.1}}
+        trans_dict = {
+            target_elem: {target_elem: 1.0 - fraction, sub_elem: fraction}
         }
-        if meta_list is not None:
-            entry["metadata"] = meta_list[idx]
-        candidates.append(entry)
-
-    return deduplicate_candidates(candidates, key=dedup_key)
+        trans = SubstitutionTransformation(trans_dict)
+        return trans.apply_transformation(struct)
+    
+    def _is_plausible(self, struct: Structure) -> bool:
+        """Toy plausibility filter."""
+        elems = {str(e) for e in struct.composition.elements}
+        
+        # Must contain Li or Na
+        if not (elems & {"Li", "Na"}): return False
+        # Must contain O
+        if "O" not in elems: return False
+        # Whitelist
+        if not elems.issubset(self.ALLOWED_ELEMENTS): return False
+        
+        return True
+        
+    def _is_new(self, struct: Structure) -> bool:
+        """Check if structure is new based on fingerprint."""
+        try:
+            # Expensive but correct: Spacegroup + Formula + Vol/Atom
+            sg = SpacegroupAnalyzer(struct).get_space_group_symbol()
+            formula = struct.composition.reduced_formula
+            nsites = len(struct)
+            
+            fp = (formula, sg, nsites)
+            
+            if fp in self.seen_fingerprints:
+                return False
+            
+            self.seen_fingerprints.add(fp)
+            return True
+        except:
+            return False

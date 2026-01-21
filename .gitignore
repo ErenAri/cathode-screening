@@ -78,6 +78,15 @@ wandb/
 # ALIGNN large format data
 data/alignn_format/
 
+# --- DFT / QE ---
+reports/dft_qe_*/pseudos/
+reports/dft_qe_*/SSSP_*.tar.gz
+reports/dft_qe_*/**/pw.out
+reports/dft_qe_*/**/pw.err
+reports/dft_qe_*/**/*.save/
+reports/dft_qe_*/**/out/
+reports/dft_qe_*/run_all_qe_parallel.log
+
 # --- GCP / Training ---
 .venv-training/
 checkpoints/

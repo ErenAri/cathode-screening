@@ -1,93 +1,100 @@
-"""
-Grounded Win report utilities for discovery evaluation.
-
-Computes bootstrap confidence intervals for EF@1%, Recall@100, Precision@100,
-and reports AUPRC plus prevalence diagnostics.
-"""
-from __future__ import annotations
-
-from typing import Callable, Dict, Iterable, List
-
 import numpy as np
+from typing import List, Dict, Any
+from sklearn.metrics import precision_recall_curve, auc
 
 
 def grounded_win_report(
-    test_set: Iterable[dict],
+    test_set: List[Dict],
     ensemble,
     calibrator,
     n_random: int = 200,
-    n_boot: int = 1000,
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
-    Generate a grounded win report for a test set.
+    Generate a production-grade grounded win report.
 
-    Expects each test_set entry to have:
-      - "structure": structure object for ensemble prediction
-      - "is_stable": boolean ground truth
+    Metrics:
+    - EF@1% +/- 95% CI (Bootstrap)
+    - Recall@100 +/- 95% CI
+    - Precision@100 +/- 95% CI
+    - AUPRC (Threshold-free headline)
+    - Random baseline (averaged over trials)
+    - Effective prevalence (top-1% hit rate)
 
-    The ensemble must support:
-      - predict(structure) -> List[float] (per-model predictions)
-
-    The calibrator must support:
-      - predict_p_stable(preds: List[float]) -> float
+    Args:
+        test_set: List of dicts with 'structure' and 'is_stable' keys (and optionally 'e_hull')
+        ensemble: Model ensemble with .predict(structure) method
+        calibrator: Fitted CalibratedPredictor
+        n_random: Number of random stratifications for baseline
     """
-    test_list = list(test_set)
-    if not test_list:
-        raise ValueError("test_set must contain at least one sample")
-
+    # 1. Generate predictions and align with ground truth
+    #    (Convert to arrays for fast bootstrapping)
     p_stable = np.array(
-        [calibrator.predict_p_stable(ensemble.predict(s["structure"])) for s in test_list],
-        dtype=np.float32,
+        [
+            calibrator.predict_p_stable(ensemble.predict(item["structure"]))
+            for item in test_set
+        ]
     )
-    y_true = np.array([s["is_stable"] for s in test_list], dtype=np.int64)
+    y_true = np.array([item["is_stable"] for item in test_set]).astype(int)
     n = len(y_true)
 
+    # 2. Define fixed window sizes
+    #    EF@1%: top 1% of corpus size
     top_n_1pct = max(1, int(0.01 * n))
+    #    Fixed 100 candidates
     top_n_100 = min(100, n)
-    prevalence = float(y_true.mean()) if n > 0 else 0.0
 
+    prevalence = y_true.mean()
+
+    # Sort once
     order = np.argsort(p_stable)[::-1]
 
-    def bootstrap_metric(metric_fn: Callable[[np.ndarray, np.ndarray], float]) -> tuple[float, float, float]:
-        scores: List[float] = []
+    # === Bootstrap (fast, array-based) ===
+    def bootstrap_metric(metric_fn, n_boot=1000):
+        scores = []
         for _ in range(n_boot):
             idx = np.random.choice(n, n, replace=True)
             scores.append(metric_fn(p_stable[idx], y_true[idx]))
-        return float(np.mean(scores)), float(np.percentile(scores, 2.5)), float(np.percentile(scores, 97.5))
+        return np.mean(scores), np.percentile(scores, 2.5), np.percentile(scores, 97.5)
 
-    def ef_1pct(p: np.ndarray, y: np.ndarray) -> float:
+    # EF@1% (fixed top_n)
+    def ef_1pct(p, y):
         top = np.argsort(p)[::-1][:top_n_1pct]
-        hit_rate = float(y[top].mean()) if top.size else 0.0
-        prev = float(y.mean()) if y.size else 0.0
-        return hit_rate / prev if prev > 0 else 0.0
+        hit_rate = y[top].mean()
+        prev = y.mean()
+        return hit_rate / prev if prev > 0 else 0
 
     ef_mean, ef_lo, ef_hi = bootstrap_metric(ef_1pct)
 
-    def recall_100(p: np.ndarray, y: np.ndarray) -> float:
+    # Recall@100
+    def recall_100(p, y):
         top = np.argsort(p)[::-1][:top_n_100]
-        denom = float(y.sum())
-        return float(y[top].sum()) / denom if denom > 0 else 0.0
+        return y[top].sum() / y.sum() if y.sum() > 0 else 0
 
     rec_mean, rec_lo, rec_hi = bootstrap_metric(recall_100)
 
-    def prec_100(p: np.ndarray, y: np.ndarray) -> float:
+    # Precision@100
+    def prec_100(p, y):
         top = np.argsort(p)[::-1][:top_n_100]
-        return float(y[top].mean()) if top.size else 0.0
+        return y[top].mean()
 
     prec_mean, prec_lo, prec_hi = bootstrap_metric(prec_100)
 
-    from sklearn.metrics import precision_recall_curve, auc
+    # AUPRC
+    prec_curve, rec_curve, _ = precision_recall_curve(
+        y_true.astype(int), p_stable
+    )
+    auprc = auc(rec_curve, prec_curve)
 
-    prec_curve, rec_curve, _ = precision_recall_curve(y_true.astype(int), p_stable)
-    auprc = float(auc(rec_curve, prec_curve))
-
+    # Random baseline (200 trials, handle n < 100)
     k = min(100, n)
     random_scores = [
-        float(y_true[np.random.choice(n, k, replace=False)].mean()) for _ in range(n_random)
+        y_true[np.random.choice(n, k, replace=False)].mean()
+        for _ in range(n_random)
     ]
 
-    top_1pct_hits = int(y_true[order[:top_n_1pct]].sum())
-    effective_prev = top_1pct_hits / top_n_1pct if top_n_1pct > 0 else 0.0
+    # Effective prevalence reporting
+    top_1pct_hits = y_true[order[:top_n_1pct]].sum()
+    effective_prev = top_1pct_hits / top_n_1pct
 
     return {
         "ef_1pct": f"{ef_mean:.2f}x [{ef_lo:.2f}, {ef_hi:.2f}]",

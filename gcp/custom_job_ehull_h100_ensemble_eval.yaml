@@ -1,0 +1,25 @@
+workerPoolSpecs:
+- replicaCount: 1
+  machineSpec:
+    machineType: a3-highgpu-1g
+    acceleratorType: NVIDIA_H100_80GB
+    acceleratorCount: 1
+  diskSpec:
+    bootDiskType: pd-ssd
+    bootDiskSizeGb: 200
+  containerSpec:
+    imageUri: gcr.io/cathode-screening/chgnet-training-h100:latest
+    command: ["bash", "-c"]
+    args:
+    - >
+      python scripts/download_data.py &&
+      python scripts/download_checkpoints.py
+      --prefix checkpoints/gcp_h100/ehull_ens_v1
+      --dest /app/checkpoints/gcp_h100/ehull_ens_v1 &&
+      CATHODE_DEVICE=cuda
+      CATHODE_BATCH_SIZE=64
+      CATHODE_CKPT_DIR=/app/checkpoints/gcp_h100/ehull_ens_v1
+      CATHODE_REPORT_PATH=/app/checkpoints/gcp_h100/ehull_ens_v1/grounded_win_h100_ehull_ens_v1.json
+      CATHODE_CALIBRATOR_MODE=mu
+      python -u scripts/42_run_grounded_win.py &&
+      python scripts/upload_results_h100.py
