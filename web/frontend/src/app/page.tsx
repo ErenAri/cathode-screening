@@ -16,6 +16,7 @@ export default function Home() {
           <nav className="flex items-center gap-8 text-sm font-medium text-gray-600">
             <Link href="/predict" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</Link>
             <Link href="/database" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Database</Link>
+            <Link href="/database#screening-pack" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Screening</Link>
             <Link href="/about" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">About</Link>
           </nav>
           <div className="pl-8 border-l border-gray-200">
@@ -49,6 +50,12 @@ export default function Home() {
             className="px-8 py-4 bg-blue-600 text-white text-lg font-semibold rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-700 hover:-translate-y-0.5 transition-all"
           >
             Try Prediction Tool →
+          </Link>
+          <Link
+            href="/database#screening-pack"
+            className="px-8 py-4 bg-emerald-600 text-white text-lg font-semibold rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 hover:-translate-y-0.5 transition-all"
+          >
+            Open Screening Pack
           </Link>
           <Link
             href="/database"
@@ -150,6 +157,7 @@ export default function Home() {
             <Link href="/about" className="hover:text-blue-600">About</Link>
             <Link href="/predict" className="hover:text-blue-600">Predict</Link>
             <Link href="/database" className="hover:text-blue-600">Database</Link>
+            <Link href="/database#screening-pack" className="hover:text-blue-600">Screening</Link>
           </div>
           <p className="text-xs text-gray-400 border-t border-gray-200 pt-4">
             ⚠️ For screening purposes only. DFT validation recommended before synthesis. Model optimized for Li-oxide cathodes.

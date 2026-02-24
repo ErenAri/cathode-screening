@@ -73,6 +73,30 @@ gcloud compute instances delete chgnet-training --zone=us-central1-a
 # gsutil rm -r gs://cathode-screening-training
 ```
 
+## 6. Monitor QE Vertex Jobs
+
+```bash
+# One-time state check
+gcloud ai custom-jobs describe \
+  projects/247591742398/locations/us-central1/customJobs/946982341069242368 \
+  --region=us-central1 --project=cathode-screening \
+  --format='value(state,startTime,endTime)'
+
+# Live logs
+gcloud ai custom-jobs stream-logs \
+  projects/247591742398/locations/us-central1/customJobs/946982341069242368 \
+  --region=us-central1 --project=cathode-screening
+
+# Read progress snapshot uploaded by the QE runner
+gsutil cat gs://cathode-screening-training/qe_results/dft_qe_jarvis_50_mix_precision_run3/progress/progress.txt
+
+# Continuous monitor (job state + progress counters)
+python scripts/46_monitor_qe_vertex.py \
+  --job-id 946982341069242368 \
+  --progress-gcs gs://cathode-screening-training/qe_results/dft_qe_jarvis_50_mix_precision_run3 \
+  --interval-sec 60
+```
+
 ## Cost Estimate
 
 | Phase | Time | Cost/hr | Total |

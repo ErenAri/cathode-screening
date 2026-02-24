@@ -10,6 +10,8 @@ Provides endpoints for:
 from pathlib import Path
 from typing import List, Optional
 import asyncio
+import csv
+import mimetypes
 import subprocess
 from contextlib import asynccontextmanager
 import hashlib
@@ -24,15 +26,30 @@ import uuid
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Security, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 # Ensure core package is importable when running from web/api
-SRC_PATH = Path(__file__).parent.parent.parent / "src"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+SRC_PATH = REPO_ROOT / "src"
+REPORTS_DIR = REPO_ROOT / "reports"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
+
+SCREENING_PROOF_FILES: dict[str, Path] = {
+    "screening_decision_summary": REPORTS_DIR / "screening_decision_summary.txt",
+    "screening_decision_provisional": REPORTS_DIR / "screening_decision_provisional.csv",
+    "screening_execution_compact": REPORTS_DIR / "screening_execution_compact.csv",
+    "screening_execution_accept": REPORTS_DIR / "screening_execution_accept.csv",
+    "screening_execution_must_resolve_top20": REPORTS_DIR / "screening_execution_must_resolve_top20.csv",
+    "qe_final_status_estimated": REPORTS_DIR / "qe_run3_run4_run5_estimated_status.csv",
+    "qe_ranked_final_estimated": REPORTS_DIR / "dft_batch_jarvis_50_mix_final_ranked_estimated.csv",
+    "grounded_win_h100_ehull_ens_v1": REPORTS_DIR / "grounded_win_h100_ehull_ens_v1.json",
+    "grounded_win_oqmd_ens_v1": REPORTS_DIR / "grounded_win_oqmd_ens_v1.json",
+    "grounded_win_jarvis_ens_v1": REPORTS_DIR / "grounded_win_jarvis_ens_v1.json",
+}
 
 from cathode_screening.inference.artifact_manifest import load_manifest
 from cathode_screening.monitoring.metrics import MetricsCollector
@@ -777,6 +794,73 @@ def decision_to_action(decision: str) -> str:
     return mapping.get(decision, "HOLD")
 
 
+def _to_int(value: Optional[str], default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open("r", newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def _read_json_dict(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _parse_key_value_summary(path: Path) -> tuple[str, dict[str, str]]:
+    if not path.exists():
+        return "", {}
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not lines:
+        return "", {}
+    title = lines[0]
+    values: dict[str, str] = {}
+    for line in lines[1:]:
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return title, values
+
+
+def _relative_repo_path(path: Path) -> str:
+    try:
+        rel = path.relative_to(REPO_ROOT)
+        return rel.as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _proof_descriptor(proof_id: str, path: Path) -> dict:
+    exists = path.exists() and path.is_file()
+    size_bytes = path.stat().st_size if exists else None
+    mtime_utc = (
+        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(path.stat().st_mtime))
+        if exists
+        else None
+    )
+    return {
+        "id": proof_id,
+        "relative_path": _relative_repo_path(path),
+        "exists": exists,
+        "size_bytes": size_bytes,
+        "mtime_utc": mtime_utc,
+        "download_url": f"/screening/proof/{proof_id}" if exists else None,
+    }
+
+
 @app.get("/metrics")
 async def get_metrics(api_key: str = Security(get_api_key)):
     """Return in-memory metrics for monitoring and drift checks."""
@@ -831,6 +915,104 @@ async def get_model_info():
         version="1.0.0",
         artifact_manifest=_load_manifest_summary(),
     )
+
+
+@app.get("/screening/provisional")
+async def get_screening_provisional(api_key: str = Security(get_api_key)):
+    """Return provisional execution lists and proof artifacts for the JARVIS-50 QE campaign."""
+    summary_title, summary_fields = _parse_key_value_summary(
+        SCREENING_PROOF_FILES["screening_decision_summary"]
+    )
+    decision_rows = _read_csv_rows(SCREENING_PROOF_FILES["screening_decision_provisional"])
+    compact_rows = _read_csv_rows(SCREENING_PROOF_FILES["screening_execution_compact"])
+    accept_rows = _read_csv_rows(SCREENING_PROOF_FILES["screening_execution_accept"])
+    must_resolve_rows = _read_csv_rows(
+        SCREENING_PROOF_FILES["screening_execution_must_resolve_top20"]
+    )
+
+    if not decision_rows and not compact_rows:
+        raise HTTPException(
+            status_code=500,
+            detail="Provisional screening artifacts not found on server",
+        )
+
+    decision_counts = {
+        "accept": sum(1 for row in decision_rows if row.get("decision") == "accept"),
+        "hold": sum(1 for row in decision_rows if row.get("decision") == "hold"),
+        "unknown": sum(1 for row in decision_rows if row.get("decision") == "unknown"),
+    }
+    top20_unresolved = sum(
+        1
+        for row in decision_rows
+        if _to_int(row.get("rank"), default=999999) <= 20
+        and row.get("qe_final_state_est", "").strip().lower() != "done"
+    )
+
+    if not accept_rows:
+        accept_rows = [
+            row
+            for row in compact_rows
+            if row.get("action", "").strip().lower() == "screen_now"
+        ]
+    if not must_resolve_rows:
+        must_resolve_rows = [
+            row
+            for row in compact_rows
+            if row.get("action", "").strip().lower() == "resolve_qe_first"
+        ]
+
+    proofs = [
+        _proof_descriptor(proof_id, path)
+        for proof_id, path in SCREENING_PROOF_FILES.items()
+    ]
+
+    grounded_win = {
+        "h100_ehull_ens_v1": _read_json_dict(
+            SCREENING_PROOF_FILES["grounded_win_h100_ehull_ens_v1"]
+        ),
+        "oqmd_ens_v1": _read_json_dict(SCREENING_PROOF_FILES["grounded_win_oqmd_ens_v1"]),
+        "jarvis_ens_v1": _read_json_dict(SCREENING_PROOF_FILES["grounded_win_jarvis_ens_v1"]),
+    }
+
+    counts = {
+        "total_candidates": _to_int(
+            summary_fields.get("total_candidates"), default=len(decision_rows)
+        ),
+        "accept": _to_int(summary_fields.get("accept"), default=decision_counts["accept"]),
+        "hold": _to_int(summary_fields.get("hold"), default=decision_counts["hold"]),
+        "unknown": _to_int(summary_fields.get("unknown"), default=decision_counts["unknown"]),
+        "top20_unresolved": _to_int(
+            summary_fields.get("top20_unresolved"), default=top20_unresolved
+        ),
+    }
+
+    return {
+        "success": True,
+        "mode": "provisional",
+        "summary_title": summary_title,
+        "summary_fields": summary_fields,
+        "counts": counts,
+        "screening": {
+            "screen_now": accept_rows,
+            "resolve_qe_first": must_resolve_rows,
+            "compact": compact_rows,
+        },
+        "grounded_win": grounded_win,
+        "proofs": proofs,
+    }
+
+
+@app.get("/screening/proof/{proof_id}")
+async def download_screening_proof(proof_id: str, api_key: str = Security(get_api_key)):
+    """Download a proof artifact that backs the provisional screening output."""
+    path = SCREENING_PROOF_FILES.get(proof_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Proof artifact not found")
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Proof artifact missing on server")
+
+    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return FileResponse(path, media_type=media_type, filename=path.name)
 
 
 @app.get("/database")

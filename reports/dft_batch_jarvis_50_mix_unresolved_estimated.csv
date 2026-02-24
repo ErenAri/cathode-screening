@@ -1,0 +1,4 @@
+"rank","jarvis_id","formula","p_stable","mu","sigma","e_hull","is_stable","selection","qe_final_state_est","qe_status_source_est"
+"16","JVASP-88720","K11LiMn4O16","0.6751677857127019","-0.021985626220703124","0.002212700413412427","0.0","True","top","timeout","run5_retry2_est"
+"18","JVASP-133282","LiHo(WO4)2","0.6701743051035043","-0.020206642150878907","0.003690151022946115","0.0029","True","top","timeout","run5_retry2_est"
+"21","JVASP-120616","LiYb(WO4)2","0.6570483327060349","-0.015593814849853515","0.00267859849326465","0.1111","False","top","timeout","run5_retry2_est"

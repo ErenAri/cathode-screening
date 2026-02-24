@@ -1,0 +1,24 @@
+workerPoolSpecs:
+- replicaCount: 1
+  machineSpec:
+    machineType: n1-standard-32
+  diskSpec:
+    bootDiskType: pd-ssd
+    bootDiskSizeGb: 200
+  containerSpec:
+    imageUri: gcr.io/cathode-screening/qe-runner:latest
+    env:
+    - name: QE_INPUT_GCS
+      value: gs://cathode-screening-training/qe_inputs/dft_qe_jarvis_50_mix_precision_timeout_retry1
+    - name: QE_OUTPUT_GCS
+      value: gs://cathode-screening-training/qe_results/dft_qe_jarvis_50_mix_precision_run4_timeout_retry1
+    - name: QE_JOB_DIR_NAME
+      value: dft_qe_jarvis_50_mix_precision_timeout_retry1
+    - name: JOBS
+      value: "4"
+    - name: MPI_PROCS
+      value: "8"
+    - name: STRUCT_TIMEOUT_SEC
+      value: "43200"
+    - name: PROGRESS_SYNC_SEC
+      value: "300"

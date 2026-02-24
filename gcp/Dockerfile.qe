@@ -1,0 +1,16 @@
+FROM google/cloud-sdk:slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      quantum-espresso \
+      python3 \
+      python3-pip \
+      rsync \
+      ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY gcp/qe_run_entrypoint.sh /app/qe_run_entrypoint.sh
+RUN chmod +x /app/qe_run_entrypoint.sh
+
+WORKDIR /workspace
+ENTRYPOINT ["/app/qe_run_entrypoint.sh"]

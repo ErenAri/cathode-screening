@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - gcp/Dockerfile.qe
+      - -t
+      - gcr.io/cathode-screening/qe-runner:latest
+      - .
+images:
+  - gcr.io/cathode-screening/qe-runner:latest

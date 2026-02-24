@@ -14,6 +14,7 @@ export default function About() {
                     <nav className="flex items-center gap-8 text-sm font-medium text-gray-600">
                         <Link href="/predict" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</Link>
                         <Link href="/database" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Database</Link>
+                        <Link href="/database#screening-pack" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Screening</Link>
                         <Link href="/about" className="text-blue-600 hover:scale-125 transition-all duration-200">About</Link>
                     </nav>
                     <div className="pl-8 border-l border-gray-200">
