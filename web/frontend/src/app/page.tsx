@@ -17,6 +17,7 @@ export default function Home() {
             <Link href="/predict" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</Link>
             <Link href="/database" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Database</Link>
             <Link href="/database#screening-pack" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Screening</Link>
+            <Link href="/discovery" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Discovery</Link>
             <Link href="/about" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">About</Link>
           </nav>
           <div className="pl-8 border-l border-gray-200">
@@ -157,6 +158,7 @@ export default function Home() {
             <Link href="/about" className="hover:text-blue-600">About</Link>
             <Link href="/predict" className="hover:text-blue-600">Predict</Link>
             <Link href="/database" className="hover:text-blue-600">Database</Link>
+            <Link href="/discovery" className="hover:text-blue-600">Discovery</Link>
             <Link href="/database#screening-pack" className="hover:text-blue-600">Screening</Link>
           </div>
           <p className="text-xs text-gray-400 border-t border-gray-200 pt-4">

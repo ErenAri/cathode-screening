@@ -31,6 +31,8 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 
+from cathode_screening.discovery.state import CampaignState, STAGES
+
 # Ensure core package is importable when running from web/api
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC_PATH = REPO_ROOT / "src"
@@ -837,6 +839,29 @@ def _read_json_dict(path: Path) -> dict:
         return {}
 
 
+CAMPAIGNS_DIR = REPO_ROOT / "data" / "campaigns"
+
+
+def _campaign_path(name: str) -> Path:
+    """Return the JSON file path for a campaign."""
+    return CAMPAIGNS_DIR / f"{name}.json"
+
+
+def _list_campaigns() -> list[CampaignState]:
+    """Load all campaign states from data/campaigns/."""
+    if not CAMPAIGNS_DIR.exists():
+        return []
+    campaigns = []
+    for p in sorted(CAMPAIGNS_DIR.glob("*.json")):
+        if p.name.endswith(".tmp"):
+            continue
+        try:
+            campaigns.append(CampaignState.load(p))
+        except Exception as exc:
+            logger.warning("Failed to load campaign %s: %s", p.name, exc)
+    return campaigns
+
+
 def _parse_key_value_summary(path: Path) -> tuple[str, dict[str, str]]:
     if not path.exists():
         return "", {}
@@ -1089,6 +1114,241 @@ async def get_database(api_key: str = Security(get_api_key)):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Discovery Engine endpoints
+# ---------------------------------------------------------------------------
+
+import re
+
+_CAMPAIGN_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+@app.get("/discovery/campaigns")
+async def list_discovery_campaigns(api_key: str = Security(get_api_key)):
+    """List all discovery campaigns."""
+    campaigns = _list_campaigns()
+    return {
+        "success": True,
+        "campaigns": [c.summary() for c in campaigns],
+    }
+
+
+class CreateCampaignBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    pool_source: str = Field(default="ensemble_soap_loco_test")
+
+
+@app.post("/discovery/campaigns")
+async def create_discovery_campaign(
+    body: CreateCampaignBody,
+    api_key: str = Security(get_api_key),
+):
+    """Create a new discovery campaign from a predictions parquet pool."""
+    import pandas as pd
+
+    if not _CAMPAIGN_NAME_RE.match(body.name):
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign name must be alphanumeric, hyphens, or underscores (1-64 chars)",
+        )
+
+    if _campaign_path(body.name).exists():
+        raise HTTPException(status_code=409, detail=f"Campaign '{body.name}' already exists")
+
+    parquet_path = Path("data/predictions") / f"{body.pool_source}.parquet"
+    if not parquet_path.exists():
+        raise HTTPException(status_code=404, detail=f"Pool source '{body.pool_source}' not found")
+
+    df = pd.read_parquet(parquet_path)
+    id_col = "material_id" if "material_id" in df.columns else df.columns[0]
+    pool_ids = df[id_col].astype(str).tolist()
+
+    if not pool_ids:
+        raise HTTPException(status_code=400, detail="Pool is empty")
+
+    state = CampaignState.new(body.name, pool_ids)
+    state.save(_campaign_path(body.name))
+
+    return {"success": True, "campaign": state.summary()}
+
+
+@app.get("/discovery/campaigns/{name}")
+async def get_discovery_campaign(name: str, api_key: str = Security(get_api_key)):
+    """Get full details for a specific campaign."""
+    path = _campaign_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
+
+    state = CampaignState.load(path)
+
+    return {
+        "success": True,
+        "campaign": {
+            **state.summary(),
+            "created_at": state.created_at,
+            "cycles": [
+                {
+                    "cycle": c.cycle,
+                    "started_at": c.started_at,
+                    "completed_at": c.completed_at,
+                    "stage": c.stage,
+                    "candidates_selected": c.candidates_selected,
+                    "n_stable_found": c.n_stable_found,
+                    "metrics": c.metrics,
+                }
+                for c in state.cycles
+            ],
+            "stages": list(STAGES),
+        },
+    }
+
+
+@app.post("/discovery/campaigns/{name}/screen")
+async def screen_discovery_candidates(
+    name: str,
+    api_key: str = Security(get_api_key),
+):
+    """Run ML screening on the remaining candidate pool for the current cycle."""
+    import pandas as pd
+
+    path = _campaign_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
+
+    state = CampaignState.load(path)
+
+    if state.current_stage != "screen":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Campaign is at stage '{state.current_stage}', not 'screen'",
+        )
+
+    if not state.pool_remaining_ids:
+        raise HTTPException(status_code=400, detail="No remaining candidates in pool")
+
+    parquet_path = Path("data/predictions/ensemble_soap_loco_test.parquet")
+    if not parquet_path.exists():
+        raise HTTPException(status_code=500, detail="Predictions file not found")
+
+    df = pd.read_parquet(parquet_path)
+    id_col = "material_id" if "material_id" in df.columns else df.columns[0]
+    df[id_col] = df[id_col].astype(str)
+
+    remaining_set = set(state.pool_remaining_ids)
+    pool_df = df[df[id_col].isin(remaining_set)].copy()
+
+    if pool_df.empty:
+        raise HTTPException(status_code=400, detail="No matching candidates found in predictions")
+
+    sort_col = "q50" if "q50" in pool_df.columns else "pred_ehull"
+    pool_df = pool_df.sort_values(sort_col, ascending=True)
+
+    candidates = []
+    for rank, (_, row) in enumerate(pool_df.iterrows(), start=1):
+        pred_ehull = float(row.get("q50", row.get("pred_ehull", 0)))
+        std = float(row.get("epistemic_std", 0.1))
+        p_stable = float(row.get("p_stable", 0.5))
+
+        unc = classify_uncertainty(std)
+        action = get_action(p_stable, unc, pred_ehull)
+
+        candidates.append({
+            "material_id": str(row[id_col]),
+            "formula": str(row.get("formula", "")),
+            "pred_ehull": round(pred_ehull, 4),
+            "p_stable": round(p_stable, 3),
+            "uncertainty": unc,
+            "action": action,
+            "confidence_interval": (
+                round(float(row.get("q10", pred_ehull - 2 * std)), 4),
+                round(float(row.get("q90", pred_ehull + 2 * std)), 4),
+            ),
+            "rank": rank,
+        })
+
+    # Advance campaign state
+    rec = state.current_cycle_record
+    rec.metrics["candidates_scored"] = len(candidates)
+    rec.metrics["pool_remaining_at_screen"] = len(remaining_set)
+    state.advance("select")
+    state.save(path)
+
+    return {
+        "success": True,
+        "campaign_name": name,
+        "cycle": state.current_cycle,
+        "candidates_screened": len(candidates),
+        "candidates": candidates,
+    }
+
+
+@app.get("/discovery/campaigns/{name}/candidates")
+async def get_discovery_candidates(
+    name: str,
+    limit: int = 50,
+    offset: int = 0,
+    api_key: str = Security(get_api_key),
+):
+    """Get paginated ranked candidates for a campaign."""
+    import pandas as pd
+
+    path = _campaign_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
+
+    state = CampaignState.load(path)
+
+    parquet_path = Path("data/predictions/ensemble_soap_loco_test.parquet")
+    if not parquet_path.exists():
+        raise HTTPException(status_code=500, detail="Predictions file not found")
+
+    df = pd.read_parquet(parquet_path)
+    id_col = "material_id" if "material_id" in df.columns else df.columns[0]
+    df[id_col] = df[id_col].astype(str)
+
+    remaining_set = set(state.pool_remaining_ids)
+    pool_df = df[df[id_col].isin(remaining_set)].copy()
+
+    sort_col = "q50" if "q50" in pool_df.columns else "pred_ehull"
+    pool_df = pool_df.sort_values(sort_col, ascending=True)
+
+    total = len(pool_df)
+    page_df = pool_df.iloc[offset: offset + limit]
+
+    candidates = []
+    for rank, (_, row) in enumerate(page_df.iterrows(), start=offset + 1):
+        pred_ehull = float(row.get("q50", row.get("pred_ehull", 0)))
+        std = float(row.get("epistemic_std", 0.1))
+        p_stable = float(row.get("p_stable", 0.5))
+        unc = classify_uncertainty(std)
+        action = get_action(p_stable, unc, pred_ehull)
+
+        candidates.append({
+            "material_id": str(row[id_col]),
+            "formula": str(row.get("formula", "")),
+            "pred_ehull": round(pred_ehull, 4),
+            "p_stable": round(p_stable, 3),
+            "uncertainty": unc,
+            "action": action,
+            "confidence_interval": (
+                round(float(row.get("q10", pred_ehull - 2 * std)), 4),
+                round(float(row.get("q90", pred_ehull + 2 * std)), 4),
+            ),
+            "rank": rank,
+        })
+
+    return {
+        "success": True,
+        "campaign_name": name,
+        "cycle": state.current_cycle,
+        "stage": state.current_stage,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "candidates": candidates,
+    }
 
 
 @app.post("/predict", response_model=PredictionResponse)

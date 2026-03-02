@@ -226,6 +226,7 @@ export default function Database() {
                         <Link href="/predict" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Predict</Link>
                         <Link href="/database" className="text-blue-600 hover:scale-125 transition-all duration-200">Database</Link>
                         <Link href="/database#screening-pack" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Screening</Link>
+                        <Link href="/discovery" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">Discovery</Link>
                         <Link href="/about" className="hover:text-blue-600 hover:scale-125 transition-all duration-200">About</Link>
                     </nav>
                     <div className="pl-8 border-l border-gray-200">
