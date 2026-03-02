@@ -688,7 +688,11 @@ async def startup_event() -> None:
         
         # Check models based on model type
         model_type = get_model_type()
-        if model_type == "chgnet":
+        if model_type == "mace":
+            # MACEDecisionService has .models directly
+            if not predictor.models:
+                raise RuntimeError("No MACE ensemble models loaded")
+        elif model_type == "chgnet":
             # CHGNet adapter uses screener.models
             if not predictor.screener.models:
                 raise RuntimeError("No CHGNet ensemble models loaded")
@@ -920,13 +924,21 @@ async def ready():
 @app.get("/model/info", response_model=ModelInfo)
 async def get_model_info():
     """Get information about the loaded model."""
+    from .inference import get_model_type
+    model_type = get_model_type()
+    model_names = {
+        "mace": ("MACE-MP-0 Ensemble", "MACE-MP-0 Fine-tuned (5 members)"),
+        "chgnet": ("CHGNet-Ensemble", "Crystal Hamiltonian Graph Neural Network"),
+        "cgcnn": ("CGCNN-Ensemble", "Crystal Graph Convolutional Neural Network"),
+    }
+    name, desc = model_names.get(model_type, ("Unknown", "Unknown"))
     return ModelInfo(
-        model_name="CGCNN-Ensemble",
-        model_type="Crystal Graph Convolutional Neural Network",
+        model_name=name,
+        model_type=desc,
         ensemble_size=5,
         training_data="Materials Project cathodes (SOAP-LOCO split)",
-        daf_at_10=1.64,
-        version="1.0.0",
+        daf_at_10=2.12,
+        version="2.0.0",
         artifact_manifest=_load_manifest_summary(),
     )
 
