@@ -41,6 +41,7 @@ ENV CATHODE_AUTH_ENABLED=false
 ENV CATHODE_STRICT_STARTUP=false
 ENV CATHODE_REQUIRE_CALIBRATION=false
 ENV CATHODE_FORCE_HTTPS=false
+ENV CATHODE_CORS_ORIGINS=https://cathode-screening.vercel.app,http://localhost:3000
 
 # Unprivileged user
 RUN adduser --disabled-password --gecos "" appuser \
