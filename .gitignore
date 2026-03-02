@@ -71,11 +71,9 @@ data/
 !data/predictions/
 
 # --- Artifacts ---
-# Keep metadata (ensemble_meta.json, config.yaml, metrics.json, conformal_params.json)
-# but exclude heavy model checkpoints (22MB each)
+# MACE ensemble checkpoints (~22MB each, 5 members) are committed for Render Docker builds.
+# Exclude other large artifacts.
 artifacts/checkpoints/
-artifacts/**/*.pt
-artifacts/**/*.pth
 
 # --- Logs ---
 logs/
