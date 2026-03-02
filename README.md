@@ -2,30 +2,29 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue?style=flat&logo=python)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0-orange?style=flat&logo=pytorch)
+![MACE](https://img.shields.io/badge/MACE--MP--0-Fine--tuned-green?style=flat)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.95-009688?style=flat&logo=fastapi)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat&logo=next.js)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)
+![Render](https://img.shields.io/badge/Render-Deployed-46E3B7?style=flat&logo=render)
+![Vercel](https://img.shields.io/badge/Vercel-Deployed-black?style=flat&logo=vercel)
 
-**CathodeScreen** is an enterprise-grade machine learning framework designed to accelerate the discovery of thermodynamically stable lithium-ion battery cathode materials. It implements a scalable inference pipeline utilizing a deep ensemble of **CHGNet** (Crystal Hamiltonian Graph Neural Network) models to robustly predict energy above hull ($E_{hull}$) with quantified epistemic uncertainty.
+**CathodeScreen** is an enterprise-grade machine learning framework designed to accelerate the discovery of thermodynamically stable lithium-ion battery cathode materials. It implements a scalable inference pipeline utilizing a deep ensemble of **MACE-MP-0** fine-tuned models (with CHGNet and CGCNN fallbacks) to robustly predict energy above hull ($E_{hull}$) with quantified epistemic and aleatoric uncertainty, conformal calibration, and automated governance.
 
 
 ## Table of Contents
-1.  [Abstract](#-abstract)
-2.  [Problem Statement](#-problem-statement)
-3.  [System Architecture](#-system-architecture)
-4.  [Machine Learning Pipeline](#-machine-learning-pipeline)
-    *   [Dataset & Splitting](#dataset--splitting)
-    *   [Model Architecture](#model-architecture-cgcnn)
-    *   [Uncertainty Quantification](#uncertainty-quantification)
-5.  [Performance Metrics](#-performance-metrics)
-6.  [Installation & Deployment](#-installation--deployment)
-7.  [Citation](#-citation)
+1.  [Abstract](#abstract)
+2.  [Problem Statement](#problem-statement)
+3.  [System Architecture](#system-architecture)
+4.  [Machine Learning Pipeline](#machine-learning-pipeline)
+5.  [Performance Metrics](#performance-metrics)
+6.  [Installation & Deployment](#installation--deployment)
+7.  [References](#references)
 
 ---
 
 ## Abstract
 
-The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. By leveraging CHGNet trained on merged Li-cathode datasets (MP + OQMD + MP2024), the system identifies thermodynamically stable candidates ($E_{hull} < 0.05$ eV/atom) with a **26.29x enrichment** at the top 1% on MP test data, and retains positive enrichment on OOD datasets (OQMD: **1.36x**, JARVIS: **1.86x**).
+The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. The production model is a **5-member MACE-MP-0 fine-tuned ensemble** with conformal calibration, achieving **Test MAE: 0.030 eV**, **Spearman: 0.663**, **90% prediction interval coverage**, and **92.7% KEEP precision** with **0% false-kill rate**. The system passes all 6 automated governance checks (ranking, calibration, precision, false-kill, decision-making) and is approved for production use.
 
 ## Problem Statement
 
@@ -40,38 +39,28 @@ Traditional high-throughput screening relies on massive DFT compute resources. H
 
 ## System Architecture
 
-The application uses a decoupled microservices architecture optimized for cloud deployment. In production, the API can be fronted by an HTTPS load balancer with Cloud Armor (optional, requires a custom domain) and connected to centralized logging/metrics/tracing for SRE.
+The application uses a decoupled architecture deployed to **Render** (backend) and **Vercel** (frontend).
 
 ```mermaid
 graph LR
-    User[User / Chemist] -->|HTTPS| FE(Next.js Frontend)
-    User -->|API Clients| Edge[HTTPS LB + Cloud Armor]
-    FE -->|JSON Request| Edge
-    Edge -->|API| API(FastAPI Inference)
+    User[User / Chemist] -->|HTTPS| FE(Next.js on Vercel)
+    FE -->|JSON| API(FastAPI on Render)
     subgraph "Inference Engine"
         API -->|Parse| Pymatgen(Structure Parser)
-        Pymatgen -->|Graph| GNN1(CHGNet Model 1)
-        Pymatgen -->|Graph| GNN2(CHGNet Model 2)
-        Pymatgen -->|Graph| GNN3(CHGNet Model 3)
-        Pymatgen -->|Graph| GNN4(CHGNet Model 4)
-        Pymatgen -->|Graph| GNN5(CHGNet Model 5)
+        Pymatgen -->|Graph| M1(MACE Member 1)
+        Pymatgen -->|Graph| M2(MACE Member 2)
+        Pymatgen -->|Graph| M3(MACE Member 3)
+        Pymatgen -->|Graph| M4(MACE Member 4)
+        Pymatgen -->|Graph| M5(MACE Member 5)
     end
-    GNN1 & GNN2 & GNN3 & GNN4 & GNN5 -->|Aggregator| Stats(Mean & Variance)     
-    Stats -->|Policy| Result[Action Recommendation]
-    subgraph "Observability"
-        Logs[Cloud Logging]
-        Metrics[Prometheus / Cloud Monitoring]
-        Traces[OpenTelemetry]
-    end
-    API --> Logs
-    API --> Metrics
-    API --> Traces
+    M1 & M2 & M3 & M4 & M5 -->|Aggregate| Stats[q10 / q50 / q90 + Conformal]
+    Stats -->|Policy| Result[KEEP / MAYBE / KILL]
 ```
 
 ### Components
-*   **Inference Engine (Backend)**: Built with **FastAPI** and **PyTorch**. Validates crystal structures via `pymatgen`, generates graph embeddings, and executes vectorized inference on CPU (< 50ms latency).
-*   **User Interface (Frontend)**: built with **Next.js 14** (App Router). Features server-side rendering (SSR) for SEO and a responsive UI tailored for researchers.
-*   **Orchestration**: Fully containerized with highly optimized Docker images (multi-stage builds to minimize size).
+*   **Inference Engine (Backend)**: Built with **FastAPI** and **PyTorch**. Validates crystal structures via `pymatgen`, computes neighbor lists, and runs the 5-member MACE ensemble with conformal calibration. Deployed on **Render** as a Docker web service.
+*   **User Interface (Frontend)**: Built with **Next.js 14** (App Router). Deployed on **Vercel** with automatic preview deployments on PRs.
+*   **Model Adapters**: Pluggable model backend via `CATHODE_MODEL_TYPE` env var — supports `mace` (production), `chgnet`, and `cgcnn` (legacy).
 
 ---
 
@@ -84,119 +73,154 @@ graph LR
     *   Instead of random splitting, we cluster materials by structural similarity (using SOAP descriptors).
     *   We train on $N-1$ clusters and test on the unseen cluster. This mimics the real-world scenario of discovering *new* families of materials, ensuring our metrics are rigorous.
 
-### Model Architecture: CHGNet
-We utilize **CHGNet** (Crystal Hamiltonian Graph Neural Network, Deng et al., 2023) — a universal neural network potential pre-trained on the Materials Project.
-*   **Base Model**: CHGNet v0.3.0 with 412,525 parameters
-*   **Fine-tuning**: Trained on Li-O-TM cathodes with SOAP-LOCO splits
-*   **Ensemble**: 5 models with different random seeds for uncertainty
-*   **Output**: Direct E_hull prediction (not total energy)
+### Model Architecture: MACE-MP-0 Fine-tuned Ensemble
+The production model is a **5-member MACE-MP-0** (Batatia et al., 2023) fine-tuned ensemble:
+*   **Base Model**: MACE-MP-0 "medium" backbone (~3.5M params), pre-trained on the Materials Project
+*   **Fine-tuning**: Backbone frozen except last interaction block; custom regression head (128-dim) with quantile outputs (q10, q50, q90) and stability classification (p_stable, p_metastable)
+*   **Ensemble**: 5 members with seeds 42-46, early stopping on val MAE
+*   **Calibration**: Post-hoc symmetric conformal calibration on validation set for 90% coverage
+*   **Artifacts**: `artifacts/models/mace_ensemble_v1/` (~106 MB total)
 
 ### Uncertainty Quantification
-We implement **Deep Ensembles** (Lakshminarayanan et al., 2017) to quantify **Epistemic Uncertainty** (model ignorance).
-*   We train **M=5** models with different random initializations and data shuffles.
-*   **Prediction**: μ = (1/M) Σ μ<sub>m</sub>(x)
-*   **Uncertainty**: σ² = (1/M) Σ (μ<sub>m</sub>(x)² − μ²)
+*   **Aleatoric**: Per-model quantile regression (q10, q90) captures data noise
+*   **Epistemic**: Inter-model disagreement (std of q50 across 5 members) captures model ignorance
+*   **Conformal**: Symmetric delta added to intervals to guarantee 90% coverage on calibration set
+*   **Total**: σ_total = √(σ_aleatoric² + σ_epistemic²)
 
 ### Decision Policy
-Materials are classified based on a hybrid policy:
+Materials are classified using conformally-calibrated quantile predictions:
 
 | Action | Criterion | Meaning |
 | :--- | :--- | :--- |
-| **KEEP** | μ < 0.05 eV & σ < 0.02 | High confidence stable. Send to DFT. |
-| **MAYBE** | 0.05 ≤ μ ≤ 0.15 or σ > 0.02 | Uncertain. Manual review recommended. |
-| **KILL** | μ > 0.15 eV | Confident unstable. Do not compute. |
+| **KEEP** | q90 < 0.05 eV & p_stable > 0.8 | High confidence stable. Send to DFT. |
+| **KEEP** | q90 < 0.10 eV & p_stable > 0.7 | Likely metastable. Worth DFT. |
+| **KILL** | q10 > 0.10 eV | Confident unstable. Do not compute. |
+| **MAYBE** | Otherwise | Uncertain. Manual review recommended. |
 
 ---
 
-## Performance Metrics (v2-merged)
+## Performance Metrics (MACE Ensemble v1)
 
-> **Summary (MP test, E_hull <= 0.05)**: EF@1% = **26.29x**, Recall@100 = **55.7%**, Precision@100 = **10.1%**, Top-1% hit rate = **50.0%**.
+### Governance Report (APPROVED)
 
-### Grounded Win (MP test set)
+All 6 automated governance checks passed. Full report: `data/reports/model_validation/model_validation_report.json`
+
+| Check | Status |
+| :--- | :--- |
+| Ranking (val) — Spearman > 0.5 | PASS (0.754) |
+| Ranking (test) — Spearman > 0.5 | PASS (0.663) |
+| Calibration (test) — 90% coverage | PASS (91.3%) |
+| False-kill rate < 2% | PASS (0.0%) |
+| KEEP precision > 85% | PASS (92.7%) |
+| System makes decisions | PASS |
+
+### Ranking & Accuracy
+
+| Split | N | Spearman ρ | MAE (eV) | EF@10 | Frac Stable @100 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Val** | 1,842 | 0.754 | 0.033 | 2.26x | 91% |
+| **Test** | 1,013 | 0.663 | 0.030 | 2.12x | 94% |
+| **LOCO** | 764 | -0.024 | 0.104 | 1.77x | 66% |
+
+### Calibration
+
+| Split | Coverage (target 90%) | Median Interval Width | Met? |
+| :--- | :--- | :--- | :--- |
+| **Val** | 90.1% | 0.106 eV | Yes |
+| **Test** | 91.3% | 0.109 eV | Yes |
+| **LOCO** | 72.0% | 0.175 eV | No |
+
+### Decision Outcomes (Test Set)
 
 | Metric | Value |
 | :--- | :--- |
-| **EF@1%** | **26.29x [8.10, 46.80]** |
-| **AUPRC** | 0.273 |
-| **Recall@100** | 55.7% [30.8%, 78.9%] |
-| **Precision@100** | 10.1% [4.0%, 16.0%] |
-| **Top-1% Hit Rate** | 50.0% |
-| **Dataset Prevalence** | 1.7% |
+| KEEP precision | 92.7% |
+| KEEP recall | 23.8% |
+| KILL precision | 73.3% |
+| False-kill rate | 0.0% |
+| Materials KEEP'd | 123 / 1,013 (12.1%) |
+| Materials KILL'd | 15 / 1,013 (1.5%) |
 
-### OOD Validation (E_hull <= 0.05)
+**Known limitation**: LOCO (leave-one-cluster-out) performance degrades significantly — Spearman near zero, coverage 72%. The model is reliable for in-distribution cathodes but should not be trusted for structurally novel polymorphs without additional validation.
 
-| Dataset | EF@1% | Precision@100 | Top-1% Hit Rate | Prevalence |
-| :--- | :--- | :--- | :--- | :--- |
-| **OQMD** | **1.36x [0.57, 2.27]** | **67.8% [58.0%, 77.0%]** | 31.8% | 23.0% |
-| **JARVIS** | **1.86x [1.52, 2.18]** | **78.0% [70.0%, 86.0%]** | 79.4% | 43.2% |
+### Legacy CHGNet Metrics
 
-**Model Scope**: Li-containing oxide cathode materials (Li-O-TM)  
-**Validation**: MP SOAP-LOCO splits for in-domain; OQMD + JARVIS for OOD
+> Prior CHGNet v2-merged results: EF@1% = **26.29x**, OQMD EF@1% = **1.36x**, JARVIS EF@1% = **1.86x**. See `reports/` for full grounded-win analysis.
 
 ---
 
-## H100 Training Runs (Vertex AI)
+## Training
 
-Recent CHGNet training and evaluation jobs on H100 (Vertex AI custom jobs):
+### MACE Ensemble (Production)
 
-| Job Name | Duration |
-| :--- | :--- |
-| chgnet-h100-ensemble-oqmd-v1 | 4h 46m |
-| chgnet-ehull-h100-oqmd-v1 | 53m 15s |
-| chgnet-ehull-h100-ens-v1 | 3h 15m |
-| chgnet-ehull-h100-v1 | 40m 12s |
-| chgnet-training-h100-v1 | 11h 43m |
+Trained locally with `scripts/04_train_ensemble.py` using config `configs/train_mace_ehull.yaml`:
 
-These runs provide the H100 training baseline referenced by the grounded-win reports in `reports/`.
+| Member | Seed | Val MAE | Test MAE | Spearman | Epochs |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 0 | 42 | 0.036 | 0.032 | 0.651 | ~40 |
+| 1 | 43 | 0.032 | 0.033 | 0.655 | ~35 |
+| 2 | 44 | 0.035 | 0.029 | 0.664 | ~38 |
+| 3 | 45 | 0.031 | 0.028 | 0.672 | ~42 |
+| 4 | 46 | 0.034 | 0.031 | 0.638 | ~36 |
+| **Mean** | | **0.034** | **0.031** | **0.656** | |
 
-Job config summary (from `gcp/custom_job_ehull_h100*.yaml` and `scripts/40_train_gcp_h100.py` defaults):
+Post-training steps:
+1. `scripts/07_predict_ensemble.py` — generate val/test/LOCO predictions
+2. `scripts/05b_conformal_calibrate.py` — compute conformal delta for 90% coverage
+3. `scripts/validate_model_trust.py` — run governance checks (must pass 6/6)
 
-| Job Name | Config |
-| :--- | :--- |
-| chgnet-ehull-h100-v1 / chgnet-ehull-h100-oqmd-v1 | script `21_finetune_chgnet_v3.py`; epochs 60; batch 128; lr 1e-3; data `merged_dataset`; output `ehull_oqmd_v1` |
-| chgnet-ehull-h100-ens-v1 / chgnet-h100-ensemble-oqmd-v1 | script `24_train_chgnet_ensemble.py`; epochs 60; batch 128; lr 1e-3; output `ehull_oqmd_ens_v1` |
-| chgnet-ehull-h100-ens-v1 (eval) | script `42_run_grounded_win.py`; batch 64; env `CATHODE_DEVICE=cuda`, `CATHODE_CALIBRATOR_MODE=mu` |
-| chgnet-training-h100-v1 | script `40_train_gcp_h100.py`; epochs pretrain 30 / finetune 60; batch 256; lr 1.5e-3; notes bf16, warmup 3, 7 models |
+### Legacy CHGNet Runs (H100 / Vertex AI)
 
-Paths: data `/app/data/processed/merged_dataset`; outputs under `/app/checkpoints/gcp_h100/`.
+Prior CHGNet training on H100 GPUs via Vertex AI custom jobs. See `gcp/` for job configs and `reports/` for grounded-win results.
 
 ---
 
 ## Installation & Deployment
 
-### Option 1: Docker (Recommended)
-The system is ready for cloud deployment (e.g., Google Cloud Run, AWS Fargate).
+### Production: Render (Backend) + Vercel (Frontend)
+
+**Backend (Render)**:
+1. Create a new Web Service on [Render](https://render.com) from this repo
+2. Set **Root Directory** to `.` and **Dockerfile Path** to `render.Dockerfile`
+3. Configure environment variables:
+
+| Variable | Value | Required |
+| :--- | :--- | :--- |
+| `CATHODE_MODEL_TYPE` | `mace` | Yes |
+| `CATHODE_DEVICE` | `cpu` | Yes |
+| `CATHODE_CORS_ORIGINS` | `https://your-app.vercel.app` | Yes |
+| `CATHODE_AUTH_ENABLED` | `true` | Recommended |
+| `CATHODE_API_KEY` | (your key) | If auth enabled |
+
+Or use the Render Blueprint: `render.yaml` auto-configures the service.
+
+**Frontend (Vercel)**:
+1. Import `web/frontend` on [Vercel](https://vercel.com)
+2. Set environment variables:
+
+| Variable | Value |
+| :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` |
+| `NEXT_PUBLIC_API_KEY` | (if auth enabled) |
+
+### Option 2: Docker Compose (Local)
 
 ```bash
-# 1. Start the stack
 docker-compose up --build -d
-
-# 2. Access
 # Frontend: http://localhost:3000
 # Backend Docs: http://localhost:8080/docs
 ```
 
-Optional edge proxy (rate limiting, headers):
-
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.edge.yml up --build -d
-```
-
-GCP deployment notes are in `docs/gcp_deployment.md` (uses `deploy_gcp.ps1`).
-GCP edge, observability, and scaling guides: `docs/gcp_edge_cloud_armor.md`, `docs/gcp_observability.md`, `docs/gcp_scaling.md`.
-
-### Option 2: Local Development
+### Option 3: Local Development
 
 **Prerequisites**: Python 3.10+, Node.js 20+
 
 ```bash
 # Backend (Terminal 1)
-# Must run from project root
 pip install -r web/api/requirements.txt
-python -m uvicorn web.api.main:app --port 8001
+CATHODE_MODEL_TYPE=mace python -m uvicorn web.api.main:app --port 8000
 
 # Frontend (Terminal 2)
-# Must navigate to frontend directory first!
 cd web/frontend
 npm install
 npm run dev
@@ -261,7 +285,9 @@ Large QE outputs are ignored in `.gitignore` so only inputs and metadata stay in
 ---
 
 ## References
-1.  Deng, B., et al. (2023). CHGNet: Pretrained universal neural network potential for charge-informed atomistic modelling. *Nature Machine Intelligence*.
-2.  Jain, A., et al. (2013). The Materials Project: A materials genome approach. *APL Mater.*
-3.  Lakshminarayanan, B., et al. (2017). Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles. *NeurIPS*.
-4.  Bartók, A. P., et al. (2013). On representing chemical environments. *Phys. Rev. B*.
+1.  Batatia, I., et al. (2023). MACE-MP-0: A Foundation Model for Materials Science. *arXiv:2401.00096*.
+2.  Deng, B., et al. (2023). CHGNet: Pretrained universal neural network potential for charge-informed atomistic modelling. *Nature Machine Intelligence*.
+3.  Jain, A., et al. (2013). The Materials Project: A materials genome approach. *APL Mater.*
+4.  Lakshminarayanan, B., et al. (2017). Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles. *NeurIPS*.
+5.  Bartók, A. P., et al. (2013). On representing chemical environments. *Phys. Rev. B*.
+6.  Vovk, V., et al. (2005). Algorithmic Learning in a Random World. *Springer*. (Conformal prediction)

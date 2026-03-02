@@ -56,7 +56,7 @@ def compute_voronoi_features(
                     weight = info.get("weight", 1.0)
                     voronoi_edges[(i, j)] = weight
                 break
-            except Exception:
+            except (RuntimeError, ValueError, IndexError, KeyError):
                 if attempt == max_retries - 1:
                     coord_nums[i] = 0.0
 

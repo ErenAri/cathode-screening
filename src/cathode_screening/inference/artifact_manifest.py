@@ -17,6 +17,9 @@ class ArtifactFile:
     sha256: str
 
 
+SUPPORTED_SCHEMA_VERSIONS = {"1.0", "1.1"}
+
+
 @dataclass
 class ArtifactManifest:
     schema_version: str
@@ -254,6 +257,12 @@ def validate_manifest(
     manifest = load_manifest(manifest_path)
     root = Path(artifact_dir) if artifact_dir is not None else Path(manifest.artifact_dir)
     issues: List[str] = []
+
+    if manifest.schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        issues.append(
+            f"unsupported_schema:{manifest.schema_version} "
+            f"(supported: {', '.join(sorted(SUPPORTED_SCHEMA_VERSIONS))})"
+        )
 
     for entry in manifest.files:
         path = root / entry.path

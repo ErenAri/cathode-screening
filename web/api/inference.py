@@ -1,6 +1,6 @@
 """
 Inference service for CathodeScreen API.
-Supports both CHGNet (v1-Li-Cathode) and CGCNN (legacy) models.
+Supports CHGNet (v1-Li-Cathode), MACE-MP-0 fine-tuned, and CGCNN (legacy) models.
 """
 from __future__ import annotations
 
@@ -17,9 +17,10 @@ if str(SRC_PATH) not in sys.path:
 # Import types for type hints
 from cathode_screening.inference.predictor import DecisionService
 from cathode_screening.inference.chgnet_adapter import CHGNetDecisionService
+from cathode_screening.inference.mace_adapter import MACEDecisionService
 
 # Type alias for model service
-ModelService = Union[DecisionService, CHGNetDecisionService]
+ModelService = Union[DecisionService, CHGNetDecisionService, MACEDecisionService]
 
 _predictor: Optional[ModelService] = None
 
@@ -34,26 +35,30 @@ def get_predictor() -> ModelService:
     
     Model type is determined by CATHODE_MODEL_TYPE env var:
     - "chgnet" (default): v1-Li-Cathode CHGNet ensemble
+    - "mace": MACE-MP-0 fine-tuned ensemble (governance-approved)
     - "cgcnn": Legacy CGCNN ensemble
-    
+
     Returns:
-        DecisionService or CHGNetDecisionService instance
+        DecisionService, CHGNetDecisionService, or MACEDecisionService instance
     """
     global _predictor
-    
+
     if _predictor is None:
         model_type = get_model_type()
-        
+
         if model_type == "chgnet":
-            print(f"Loading CHGNet v1-Li-Cathode ensemble...")
+            print("Loading CHGNet v1-Li-Cathode ensemble...")
             _predictor = CHGNetDecisionService.from_env()
+        elif model_type == "mace":
+            print("Loading MACE-MP-0 fine-tuned ensemble...")
+            _predictor = MACEDecisionService.from_env()
         elif model_type == "cgcnn":
-            print(f"Loading CGCNN legacy ensemble...")
+            print("Loading CGCNN legacy ensemble...")
             _predictor = DecisionService.from_env()
         else:
             raise ValueError(
                 f"Unknown CATHODE_MODEL_TYPE: {model_type}. "
-                "Use 'chgnet' or 'cgcnn'"
+                "Use 'chgnet', 'mace', or 'cgcnn'"
             )
         
         print(f"Model loaded: {type(_predictor).__name__}")

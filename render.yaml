@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: cathode-screening-api
+    runtime: docker
+    dockerfilePath: render.Dockerfile
+    plan: standard
+    envVars:
+      - key: CATHODE_MODEL_TYPE
+        value: mace
+      - key: CATHODE_ARTIFACTS_DIR
+        value: /app/artifacts
+      - key: CATHODE_DEVICE
+        value: cpu
+      - key: CATHODE_AUTH_ENABLED
+        value: "false"
+      - key: CATHODE_CORS_ORIGINS
+        sync: false  # Set manually after Vercel deploy
+      - key: CATHODE_RATE_LIMIT_PER_MINUTE
+        value: "60"
+    healthCheckPath: /ready

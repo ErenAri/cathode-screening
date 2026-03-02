@@ -48,7 +48,8 @@ train:
   precision: fp32
   batch_size: 256
   balanced_sampling: true
-  num_workers: 0
+  num_workers: 4  # Set to 0 on Windows if spawn issues occur
+  persistent_workers: true
   epochs: 100
   warmup_epochs: 5
   balanced_sampling_start_epoch: 6

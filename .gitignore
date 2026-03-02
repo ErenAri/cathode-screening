@@ -50,11 +50,19 @@ yarn-error.log*
 # --- System ---
 .DS_Store
 Thumbs.db
+nul
+
+# --- Secrets & Credentials ---
 .env
-.env.local
-.env.*.local
+.env.*
+*.env
 *.pem
 *.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+*.credentials
 
 # --- Data ---
 # Ignore all data by default...
@@ -63,10 +71,11 @@ data/
 !data/predictions/
 
 # --- Artifacts ---
-# Allow models (small enough for git ~7MB)
-# artifacts/  <-- Removed this ignore
-# But ignore other large artifacts if they exist later
+# Keep metadata (ensemble_meta.json, config.yaml, metrics.json, conformal_params.json)
+# but exclude heavy model checkpoints (22MB each)
 artifacts/checkpoints/
+artifacts/**/*.pt
+artifacts/**/*.pth
 
 # --- Logs ---
 logs/

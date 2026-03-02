@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -8,23 +9,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from cathode_screening.common.serialization import safe_torch_load
+from cathode_screening.common.serialization import safe_torch_load, Normalizer
 from cathode_screening.models.cgcnn.model import CGCNN
 
-
-class Normalizer:
-    """Target normalizer (matches training)."""
-
-    def __init__(self, mean: float = 0.0, std: float = 1.0) -> None:
-        self.mean = mean
-        self.std = std
-
-    def denorm(self, x: torch.Tensor) -> torch.Tensor:
-        return x * self.std + self.mean
-
-    def load_state_dict(self, state_dict: Dict) -> None:
-        self.mean = state_dict["mean"]
-        self.std = state_dict["std"]
+logger = logging.getLogger(__name__)
 
 
 def _normalize_path(value: str | Path) -> Path:
@@ -35,18 +23,51 @@ def _looks_like_windows_abs(value: str) -> bool:
     return len(value) > 1 and value[1] == ":"
 
 
+def _build_model_from_cfg(cfg: dict, ckpt: dict, device: torch.device) -> nn.Module:
+    """Instantiate a model from checkpoint config and load its weights."""
+    model_type = str(cfg["model"].get("type", "cgcnn"))
+
+    if model_type == "mace":
+        from cathode_screening.models.mace_finetune.model import MACEFineTuner
+
+        model = MACEFineTuner.from_pretrained(
+            model_name=str(cfg["model"].get("backbone", "medium")),
+            head_dim=int(cfg["model"].get("head_dim", 128)),
+            dropout=float(cfg["model"].get("dropout", 0.1)),
+            freeze_backbone=True,  # Always freeze at inference
+            unfreeze_last_n=0,
+            device=str(device),
+        ).to(device)
+        model.load_state_dict(ckpt["state_dict"])
+    else:
+        model = CGCNN(
+            node_in=int(cfg["model"].get("node_in_dim", 6)),
+            node_dim=int(cfg["model"]["node_embed_dim"]),
+            edge_dim=int(cfg["model"]["edge_rbf_bins"]),
+            layers=int(cfg["model"]["message_passing_layers"]),
+            dropout=float(cfg["model"]["dropout"]),
+            pooling=str(cfg["model"]["pooling"]),
+        ).to(device)
+        model.load_state_dict(ckpt["state_dict"])
+
+    model.eval()
+    return model
+
+
 class EnsemblePredictor:
-    """Load and run a CGCNN ensemble for fast screening."""
+    """Load and run a CGCNN or MACE ensemble for fast screening."""
 
     def __init__(
         self,
         models: List[nn.Module],
         normalizers: List[Normalizer],
         device: torch.device,
+        model_type: str = "cgcnn",
     ) -> None:
         self.models = models
         self.normalizers = normalizers
         self.device = device
+        self.model_type = model_type
 
     @classmethod
     def from_directory(
@@ -69,6 +90,7 @@ class EnsemblePredictor:
 
         models: List[nn.Module] = []
         normalizers: List[Normalizer] = []
+        detected_type: Optional[str] = None
 
         for member in meta["members"]:
             raw_ckpt = member.get("checkpoint")
@@ -95,25 +117,33 @@ class EnsemblePredictor:
             ckpt = safe_torch_load(ckpt_path, device)
             cfg = ckpt["cfg"]
 
-            model = CGCNN(
-                node_in=int(cfg["model"].get("node_in_dim", 6)),
-                node_dim=int(cfg["model"]["node_embed_dim"]),
-                edge_dim=int(cfg["model"]["edge_rbf_bins"]),
-                layers=int(cfg["model"]["message_passing_layers"]),
-                dropout=float(cfg["model"]["dropout"]),
-                pooling=str(cfg["model"]["pooling"]),
-            ).to(device)
-            model.load_state_dict(ckpt["state_dict"])
-            model.eval()
+            model = _build_model_from_cfg(cfg, ckpt, device)
             models.append(model)
+
+            # Track model type (all members must be the same type)
+            member_type = str(cfg["model"].get("type", "cgcnn"))
+            if detected_type is None:
+                detected_type = member_type
+            elif detected_type != member_type:
+                raise ValueError(
+                    f"Mixed model types in ensemble: {detected_type} vs {member_type}"
+                )
 
             normalizer = Normalizer()
             if "normalizer" in ckpt:
                 normalizer.load_state_dict(ckpt["normalizer"])
             normalizers.append(normalizer)
 
-        return cls(models=models, normalizers=normalizers, device=device)
+        return cls(
+            models=models,
+            normalizers=normalizers,
+            device=device,
+            model_type=detected_type or "cgcnn",
+        )
 
+    # ------------------------------------------------------------------
+    # CGCNN graph loading / batching
+    # ------------------------------------------------------------------
     def _load_graph(
         self,
         graph: str | Path | Dict[str, np.ndarray],
@@ -187,6 +217,84 @@ class EnsemblePredictor:
                 f"Edge feature dim mismatch: got {e.shape[1]}, expected {expected_edge}"
             )
 
+    # ------------------------------------------------------------------
+    # MACE structure loading / batching
+    # ------------------------------------------------------------------
+    def _batch_structures(
+        self,
+        structures: List[str | Path | Dict[str, np.ndarray]],
+    ) -> Dict[str, torch.Tensor]:
+        """Batch structure NPZ files into a MACE-compatible data dict."""
+        from cathode_screening.models.mace_finetune.data import _compute_neighbors
+
+        # Infer z_table from first model
+        z_table = getattr(self.models[0], "z_table", None) or list(range(1, 95))
+        z_to_idx = {z: i for i, z in enumerate(z_table)}
+        r_max = 5.0  # MACE default
+
+        positions_list: list = []
+        node_attrs_list: list = []
+        edge_index_list: list = []
+        shifts_list: list = []
+        unit_shifts_list: list = []
+        cells: list = []
+        batch_idx: list = []
+        ptr = [0]
+
+        node_offset = 0
+        for i, struct in enumerate(structures):
+            if isinstance(struct, (str, Path)):
+                with np.load(struct) as z:
+                    atomic_numbers = z["atomic_numbers"]
+                    positions = z["positions"].astype(np.float64)
+                    cell = z["cell"].astype(np.float64)
+            else:
+                atomic_numbers = np.asarray(struct["atomic_numbers"])
+                positions = np.asarray(struct["positions"], dtype=np.float64)
+                cell = np.asarray(struct["cell"], dtype=np.float64)
+
+            edge_src, edge_dst, cart_shifts, u_shifts = _compute_neighbors(
+                positions, cell, r_max
+            )
+
+            n_atoms = len(atomic_numbers)
+            n_types = len(z_table)
+            na = np.zeros((n_atoms, n_types), dtype=np.float64)
+            for j, z_val in enumerate(atomic_numbers):
+                idx = z_to_idx.get(int(z_val))
+                if idx is not None:
+                    na[j, idx] = 1.0
+
+            positions_list.append(torch.tensor(positions, dtype=torch.float64))
+            node_attrs_list.append(torch.tensor(na, dtype=torch.float64))
+
+            ei = torch.tensor(np.stack([edge_src, edge_dst]), dtype=torch.long)
+            ei += node_offset
+            edge_index_list.append(ei)
+
+            shifts_list.append(torch.tensor(cart_shifts, dtype=torch.float64))
+            unit_shifts_list.append(torch.tensor(u_shifts, dtype=torch.float64))
+            cells.append(torch.tensor(cell, dtype=torch.float64))
+            batch_idx.append(torch.full((n_atoms,), i, dtype=torch.long))
+
+            node_offset += n_atoms
+            ptr.append(node_offset)
+
+        data: Dict[str, torch.Tensor] = {
+            "positions": torch.cat(positions_list).to(self.device),
+            "node_attrs": torch.cat(node_attrs_list).to(self.device),
+            "edge_index": torch.cat(edge_index_list, dim=1).to(self.device),
+            "shifts": torch.cat(shifts_list).to(self.device),
+            "unit_shifts": torch.cat(unit_shifts_list).to(self.device),
+            "cell": torch.stack(cells).to(self.device),
+            "batch": torch.cat(batch_idx).to(self.device),
+            "ptr": torch.tensor(ptr, dtype=torch.long).to(self.device),
+        }
+        return data
+
+    # ------------------------------------------------------------------
+    # Predict
+    # ------------------------------------------------------------------
     @torch.no_grad()
     def predict_batch(
         self,
@@ -195,8 +303,12 @@ class EnsemblePredictor:
         if not graphs:
             raise ValueError("No graphs provided for prediction")
 
-        x, src, dst, e, batch = self._batch_graphs(graphs)
-        self._validate_graph_dims(x, e)
+        # Prepare batched input based on model type
+        if self.model_type == "mace":
+            batch_data = self._batch_structures(graphs)
+        else:
+            x, src, dst, e, batch = self._batch_graphs(graphs)
+            self._validate_graph_dims(x, e)
 
         q10_all = []
         q50_all = []
@@ -206,7 +318,10 @@ class EnsemblePredictor:
 
         for model, normalizer in zip(self.models, self.normalizers):
             model.eval()
-            q10, q50, q90, logit_stable, logit_meta = model(x, src, dst, e, batch)
+            if self.model_type == "mace":
+                q10, q50, q90, logit_stable, logit_meta = model(batch_data)
+            else:
+                q10, q50, q90, logit_stable, logit_meta = model(x, src, dst, e, batch)
 
             q10 = normalizer.denorm(q10).cpu().numpy()
             q50 = normalizer.denorm(q50).cpu().numpy()

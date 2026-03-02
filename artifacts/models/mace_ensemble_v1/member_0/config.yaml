@@ -1,0 +1,68 @@
+data:
+  dataset_name: mp_cathodes_v1
+  processed_dir: data/processed/mp
+  splits_manifest: data/splits/mp/splits_mp_cathodes_v1.json
+  structure_dir: data/processed/mp/structures
+  target:
+    name: energy_above_hull
+    type: regression
+logging:
+  console: true
+  save_best_only: true
+  save_every_epoch: false
+  wandb:
+    enabled: false
+    project: cathode-screening
+loss:
+  cls_weight: 0.05
+metrics:
+  report:
+  - mae
+  - rmse
+  - spearman
+  - topk_hit_rate
+  - ece
+  topk:
+    k_values:
+    - 10
+    - 25
+    - 50
+    metastable_threshold_ehull: 0.1
+    stable_threshold_ehull: 0.05
+model:
+  backbone: medium
+  dropout: 0.1
+  freeze_backbone: true
+  head_dim: 128
+  r_max: 5.0
+  type: mace
+  unfreeze_last_n: 1
+project:
+  artifacts_dir: artifacts\models\mace_ensemble_v1\member_0
+  name: cathode-screening
+  output_dir: .
+  reports_dir: artifacts\models\mace_ensemble_v1\member_0
+  run_id: member_0
+train:
+  batch_size: 16
+  device: auto
+  early_stopping:
+    monitor: val_mae
+    patience: 12
+  epochs: 60
+  grad_accum_steps: 4
+  grad_clip_norm: 1.0
+  num_workers: 2
+  optimizer:
+    lr: 0.001
+    lr_backbone_factor: 0.01
+    name: adamw
+    weight_decay: 0.0
+  scheduler:
+    gamma: 0.1
+    milestones:
+    - 40
+    - 50
+    type: constant
+  seed: 42
+  warmup_epochs: 3

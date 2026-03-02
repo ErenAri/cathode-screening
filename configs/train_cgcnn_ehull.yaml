@@ -46,7 +46,8 @@ train:
   precision: fp32
   batch_size: 256
   balanced_sampling: true
-  num_workers: 0  # Disable multiprocessing on Windows (avoids spawn issues)
+  num_workers: 4  # Set to 0 on Windows if spawn issues occur
+  persistent_workers: true
   epochs: 100
   warmup_epochs: 5  # Linear warmup to stabilize quantile regression
   balanced_sampling_start_epoch: 6  # Disable balanced sampling first 5 epochs

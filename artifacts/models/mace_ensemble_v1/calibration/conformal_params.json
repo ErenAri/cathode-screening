@@ -1,0 +1,9 @@
+{
+  "delta_upper": 0.021299877715166598,
+  "delta_lower": 0.021299877715166598,
+  "target_coverage": 0.9,
+  "raw_coverage": 0.6395222584147665,
+  "calibrated_coverage_val": 0.9006514657980456,
+  "n_val": 1842,
+  "method": "split_conformal_symmetric"
+}

@@ -83,8 +83,8 @@ def _bootstrap_secrets() -> None:
         payload.update(_parse_kv_lines(path.read_text(encoding="utf-8")))
     if secret_command:
         result = subprocess.run(
-            secret_command,
-            shell=True,
+            secret_command.split(),
+            shell=False,
             check=False,
             capture_output=True,
             text=True,
@@ -631,6 +631,9 @@ if SECURITY_HEADERS:
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        response.headers.setdefault(
+            "Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'"
+        )
         if FORCE_HTTPS or request.url.scheme == "https":
             response.headers.setdefault(
                 "Strict-Transport-Security",
@@ -765,22 +768,33 @@ class ModelInfo(BaseModel):
 _model = None
 
 
+# Uncertainty classification thresholds (eV/atom)
+UNCERTAINTY_LOW_THRESHOLD = 0.05
+UNCERTAINTY_MED_THRESHOLD = 0.15
+
+# Action policy thresholds (eV/atom)
+ACTION_EHULL_DFT = 0.08
+ACTION_EHULL_DFT_CLASSIFIER = 0.10
+ACTION_EHULL_HOLD = 0.15
+ACTION_P_STABLE_STRONG = 0.70
+ACTION_P_STABLE_MODERATE = 0.50
+
+
 def classify_uncertainty(std: float) -> str:
     """Classify uncertainty level."""
-    if std < 0.05:
+    if std < UNCERTAINTY_LOW_THRESHOLD:
         return "Low"
-    elif std < 0.15:
+    elif std < UNCERTAINTY_MED_THRESHOLD:
         return "Medium"
     return "High"
 
 
 def get_action(p_stable: float, unc: str, pred: float) -> str:
-    # Relaxed Criteria:
-    # 1. Very stable prediction (Ehull < 0.05) with Low uncertainty -> DFT
-    # 2. Or Classifier strongly agrees (> 0.7) and hull is decent (< 0.1) -> DFT
-    if (unc == "Low" and pred < 0.08) or (p_stable > 0.7 and unc == "Low" and pred < 0.1):
+    if (unc == "Low" and pred < ACTION_EHULL_DFT) or (
+        p_stable > ACTION_P_STABLE_STRONG and unc == "Low" and pred < ACTION_EHULL_DFT_CLASSIFIER
+    ):
         return "DFT"
-    elif p_stable > 0.5 or pred < 0.15:
+    elif p_stable > ACTION_P_STABLE_MODERATE or pred < ACTION_EHULL_HOLD:
         return "HOLD"
     return "SKIP"
 
@@ -1010,6 +1024,8 @@ async def download_screening_proof(proof_id: str, api_key: str = Security(get_ap
         raise HTTPException(status_code=404, detail="Proof artifact not found")
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="Proof artifact missing on server")
+    if not path.resolve().is_relative_to(REPORTS_DIR.resolve()):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     return FileResponse(path, media_type=media_type, filename=path.name)
@@ -1042,13 +1058,7 @@ async def get_database(api_key: str = Security(get_api_key)):
             std = row.get("epistemic_std", 0.1)
             p_stable = row.get("p_stable", 0.5)
             
-            # Classify uncertainty
-            if std < 0.05:
-                unc = "Low"
-            elif std < 0.15:
-                unc = "Medium"
-            else:
-                unc = "High"
+            unc = classify_uncertainty(std)
             
             # Get action
             action = get_action(p_stable, unc, pred_ehull)

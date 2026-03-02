@@ -38,6 +38,14 @@ import torch.nn as nn
 import yaml
 from pymatgen.core import Composition
 
+# MACE support (optional)
+try:
+    from cathode_screening.models.mace_finetune.model import MACEFineTuner
+    from cathode_screening.models.mace_finetune.data import StructureDataset, mace_collate
+    MACE_AVAILABLE = True
+except ImportError:
+    MACE_AVAILABLE = False
+
 # Check for faiss
 try:
     import faiss
@@ -433,62 +441,83 @@ def apply_ood_gating(
 # Ensemble Loading
 # ============================================================================
 
-def load_ensemble_members(ensemble_dir: Path, device: torch.device) -> List[Tuple[nn.Module, Normalizer]]:
-    """Load all ensemble members from directory."""
-    
+def _load_checkpoint(checkpoint_path: Path, ensemble_dir: Path):
+    """Resolve checkpoint path and load it."""
+    if not checkpoint_path.exists():
+        checkpoint_path = ensemble_dir / checkpoint_path
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    return torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+
+
+def _detect_model_type(meta: dict, ensemble_dir: Path) -> str:
+    """Detect model type from first member's checkpoint config."""
+    first = meta["members"][0]
+    ckpt = _load_checkpoint(Path(first["checkpoint"]), ensemble_dir)
+    return ckpt["cfg"]["model"].get("type", "cgcnn")
+
+
+def load_ensemble_members(ensemble_dir: Path, device: torch.device):
+    """Load all ensemble members from directory.
+
+    Returns (members, meta, model_type) where members is list of (model, normalizer).
+    """
     meta_path = ensemble_dir / "ensemble_meta.json"
     if not meta_path.exists():
         raise FileNotFoundError(f"Ensemble metadata not found: {meta_path}")
-    
+
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
-    
+
+    model_type = _detect_model_type(meta, ensemble_dir)
+    print(f"  Model type: {model_type}")
+
     models = []
     normalizers = []
-    
+
     for member_info in meta["members"]:
-        checkpoint_path = member_info.get("checkpoint")
-        if checkpoint_path is None:
-            raise ValueError(f"Missing checkpoint for member {member_info['member_idx']}")
-        
-        checkpoint_path = Path(checkpoint_path)
-        # Only prepend ensemble_dir if checkpoint path doesn't exist as-is
-        # (handles both absolute paths and paths relative to project root)
-        if not checkpoint_path.exists():
-            checkpoint_path = ensemble_dir / checkpoint_path
-        
-        if not checkpoint_path.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-        
-        # Load checkpoint
-        ckpt = torch.load(checkpoint_path, map_location=device)
+        checkpoint_path = Path(member_info["checkpoint"])
+        ckpt = _load_checkpoint(checkpoint_path, ensemble_dir)
         cfg = ckpt["cfg"]
-        
-        # Create model
-        model = CGCNN(
-            node_in=cfg["model"].get("node_in_dim", 6),
-            node_dim=cfg["model"]["node_embed_dim"],
-            edge_dim=cfg["model"]["edge_rbf_bins"],
-            layers=cfg["model"]["message_passing_layers"],
-            dropout=cfg["model"]["dropout"],
-            pooling=cfg["model"]["pooling"]
-        ).to(device)
-        model.load_state_dict(ckpt["state_dict"])
-        model.eval()
-        
-        # Load normalizer
-        normalizer = Normalizer()
-        if "normalizer" in ckpt:
-            normalizer.load_state_dict(ckpt["normalizer"])
-        
+
+        if model_type == "mace":
+            if not MACE_AVAILABLE:
+                raise ImportError("mace-torch not installed. Run: pip install mace-torch")
+            model = MACEFineTuner.from_pretrained(
+                model_name=cfg["model"].get("backbone", "medium"),
+                head_dim=cfg["model"].get("head_dim", 128),
+                dropout=cfg["model"].get("dropout", 0.1),
+                freeze_backbone=cfg["model"].get("freeze_backbone", True),
+                unfreeze_last_n=cfg["model"].get("unfreeze_last_n", 1),
+            )
+            model.load_state_dict(ckpt["state_dict"])
+            model = model.to(device).eval()
+            normalizer = Normalizer()
+            if "normalizer" in ckpt:
+                normalizer.load_state_dict(ckpt["normalizer"])
+        else:
+            model = CGCNN(
+                node_in=cfg["model"].get("node_in_dim", 6),
+                node_dim=cfg["model"]["node_embed_dim"],
+                edge_dim=cfg["model"]["edge_rbf_bins"],
+                layers=cfg["model"]["message_passing_layers"],
+                dropout=cfg["model"]["dropout"],
+                pooling=cfg["model"]["pooling"]
+            ).to(device)
+            model.load_state_dict(ckpt["state_dict"])
+            model.eval()
+            normalizer = Normalizer()
+            if "normalizer" in ckpt:
+                normalizer.load_state_dict(ckpt["normalizer"])
+
         models.append(model)
         normalizers.append(normalizer)
-        
+
         member_idx = member_info.get('member_idx', member_info.get('seed', 'unknown'))
         seed = member_info.get('seed', 'unknown')
         print(f"  Loaded member {member_idx} (seed={seed})")
-    
-    return list(zip(models, normalizers)), meta
+
+    return list(zip(models, normalizers)), meta, model_type
 
 
 def load_calibration_params(ensemble_dir: Path, calibration_dir: Optional[Path] = None) -> Optional[Dict]:
@@ -525,108 +554,98 @@ def load_calibration_params(ensemble_dir: Path, calibration_dir: Optional[Path] 
 # Ensemble Inference
 # ============================================================================
 
+def _forward_members(members, batch_data, model_type, device):
+    """Run forward pass through all ensemble members, return stacked numpy arrays."""
+    q10_all, q50_all, q90_all, ps_all, pm_all = [], [], [], [], []
+
+    for model, normalizer in members:
+        if model_type == "mace":
+            data_dict, _ = batch_data
+            data_dict = {k: v.to(device) if isinstance(v, torch.Tensor) else v
+                         for k, v in data_dict.items()}
+            q10, q50, q90, logit_s, logit_m = model(data_dict)
+        else:
+            x, src, dst, e, b, y, _mids, _formulas = batch_data
+            q10, q50, q90, logit_s, logit_m = model(
+                x.to(device), src.to(device), dst.to(device), e.to(device), b.to(device))
+
+        q10_all.append(normalizer.denorm(q10).cpu().numpy())
+        q50_all.append(normalizer.denorm(q50).cpu().numpy())
+        q90_all.append(normalizer.denorm(q90).cpu().numpy())
+        ps_all.append(torch.sigmoid(logit_s).cpu().numpy())
+        pm_all.append(torch.sigmoid(logit_m).cpu().numpy())
+
+    return (np.stack(q10_all), np.stack(q50_all), np.stack(q90_all),
+            np.stack(ps_all), np.stack(pm_all))
+
+
 @torch.no_grad()
 def run_ensemble_inference(
     members: List[Tuple[nn.Module, Normalizer]],
     loader: torch.utils.data.DataLoader,
     device: torch.device,
+    model_type: str = "cgcnn",
+    df_meta: Optional[pd.DataFrame] = None,
     calibration_params: Optional[Dict] = None
 ) -> pd.DataFrame:
     """
     Run inference with ensemble and aggregate predictions.
-    
-    Aggregation rules:
-    - q50 = mean(q50_k) across K members
-    - q10_raw = mean(q10_k) across K members  
-    - q90_raw = mean(q90_k) across K members
-    - epistemic_var = var(q50_k) across K members
-    - p_stable = mean(sigmoid(logit_stable_k))
-    
-    Calibration (if params available):
-    - q10_cal = q10_raw - delta_lower
-    - q90_cal = q90_raw + delta_upper
+
+    For MACE, df_meta must be provided (the source DataFrame with material_id/formula)
+    since the MACE dataloader doesn't yield those fields directly.
     """
-    
+
     K = len(members)
-    print(f"Running ensemble inference with K={K} members...")
-    
+    print(f"Running ensemble inference with K={K} members ({model_type})...")
+
     all_results = []
-    
-    for batch_idx, (x, src, dst, e, b, y, mids, formulas) in enumerate(loader):
-        x = x.to(device)
-        src = src.to(device)
-        dst = dst.to(device)
-        e = e.to(device)
-        b = b.to(device)
-        
-        batch_size = len(mids)
-        
-        # Collect predictions from all members
-        q10_all = []  # [K, batch_size]
-        q50_all = []
-        q90_all = []
-        p_stable_all = []
-        p_meta_all = []
-        
-        for model, normalizer in members:
-            q10, q50, q90, logit_stable, logit_meta = model(x, src, dst, e, b)
-            
-            # Denormalize
-            q10 = normalizer.denorm(q10).cpu().numpy()
-            q50 = normalizer.denorm(q50).cpu().numpy()
-            q90 = normalizer.denorm(q90).cpu().numpy()
-            
-            p_stable = torch.sigmoid(logit_stable).cpu().numpy()
-            p_meta = torch.sigmoid(logit_meta).cpu().numpy()
-            
-            q10_all.append(q10)
-            q50_all.append(q50)
-            q90_all.append(q90)
-            p_stable_all.append(p_stable)
-            p_meta_all.append(p_meta)
-        
-        # Stack: [K, batch_size]
-        q10_all = np.stack(q10_all, axis=0)
-        q50_all = np.stack(q50_all, axis=0)
-        q90_all = np.stack(q90_all, axis=0)
-        p_stable_all = np.stack(p_stable_all, axis=0)
-        p_meta_all = np.stack(p_meta_all, axis=0)
-        
-        # Aggregate across ensemble (axis=0)
+    sample_cursor = 0  # tracks position in df_meta for MACE
+
+    for batch_idx, batch_data in enumerate(loader):
+        # Determine batch size and extract metadata
+        if model_type == "mace":
+            data_dict, y = batch_data
+            batch_size = y.shape[0]
+            y_np = y.numpy()
+            # material_id / formula from df_meta by sequential index
+            idx_start = sample_cursor
+            idx_end = sample_cursor + batch_size
+            mids = df_meta["material_id"].iloc[idx_start:idx_end].tolist()
+            formulas = df_meta.get("formula_pretty",
+                                   df_meta.get("formula", pd.Series([""] * len(df_meta)))
+                                   ).iloc[idx_start:idx_end].tolist()
+            sample_cursor = idx_end
+        else:
+            x, src, dst, e, b, y, mids, formulas = batch_data
+            batch_size = len(mids)
+            y_np = y.numpy()
+
+        # Forward all members
+        q10_all, q50_all, q90_all, ps_all, pm_all = _forward_members(
+            members, batch_data, model_type, device)
+
+        # Aggregate across ensemble (axis=0 = K members)
         q10_mean = np.mean(q10_all, axis=0)
         q50_mean = np.mean(q50_all, axis=0)
         q90_mean = np.mean(q90_all, axis=0)
-        
-        # Epistemic uncertainty = variance of q50 across members
-        epistemic_var = np.var(q50_all, axis=0, ddof=1)
+        epistemic_var = np.var(q50_all, axis=0, ddof=1) if K > 1 else np.zeros_like(q50_mean)
         epistemic_std = np.sqrt(epistemic_var)
-        
-        # Average probabilities (not logits!)
-        p_stable_mean = np.mean(p_stable_all, axis=0)
-        p_meta_mean = np.mean(p_meta_all, axis=0)
-        
-        # Apply calibration if available
+        p_stable_mean = np.mean(ps_all, axis=0)
+        p_meta_mean = np.mean(pm_all, axis=0)
+
+        # Calibration
         if calibration_params is not None:
-            delta_upper = calibration_params.get("delta_upper", 0.0)
-            delta_lower = calibration_params.get("delta_lower", 0.0)
-            q10_cal = q10_mean - delta_lower
-            q90_cal = q90_mean + delta_upper
+            q10_cal = q10_mean - calibration_params.get("delta_lower", 0.0)
+            q90_cal = q90_mean + calibration_params.get("delta_upper", 0.0)
         else:
             q10_cal = q10_mean
             q90_cal = q90_mean
-        
-        # Aleatoric uncertainty = half interval width
+
         aleatoric_unc = (q90_cal - q10_cal) / 2.0
-        
-        # Total uncertainty (combine in quadrature)
         total_unc = np.sqrt(aleatoric_unc**2 + epistemic_var)
-        
-        # Ground truth
-        y_np = y.numpy()
-        
-        # Build results for this batch
+
         for i in range(batch_size):
-            result = {
+            all_results.append({
                 "material_id": mids[i],
                 "formula": formulas[i],
                 "y_true": float(y_np[i]) if not np.isnan(y_np[i]) else None,
@@ -641,14 +660,12 @@ def run_ensemble_inference(
                 "total_unc": float(total_unc[i]),
                 "p_stable": float(p_stable_mean[i]),
                 "p_metastable": float(p_meta_mean[i]),
-                # Per-member q50 for diagnostics
                 "q50_members": [float(q50_all[k, i]) for k in range(K)],
-            }
-            all_results.append(result)
-        
+            })
+
         if (batch_idx + 1) % 10 == 0:
-            print(f"  Processed {(batch_idx + 1) * batch_size} samples...")
-    
+            print(f"  Processed {sample_cursor if model_type == 'mace' else (batch_idx + 1) * batch_size} samples...")
+
     return pd.DataFrame(all_results)
 
 
@@ -719,8 +736,8 @@ def main():
     
     # Load ensemble
     ensemble_dir = Path(args.ensemble_dir)
-    members, meta = load_ensemble_members(ensemble_dir, device)
-    print(f"Loaded {len(members)} ensemble members")
+    members, meta, model_type = load_ensemble_members(ensemble_dir, device)
+    print(f"Loaded {len(members)} ensemble members ({model_type})")
     
     # Load calibration params
     calibration_dir = Path(args.calibration_dir) if args.calibration_dir else None
@@ -765,17 +782,27 @@ def main():
     
     # Create dataset and loader
     target_col = data_cfg["data"]["target"]["name"]
-    dataset = GraphNPZDataset(df_split, target_col)
-    loader = torch.utils.data.DataLoader(
-        dataset, 
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=0,
-        collate_fn=collate
-    )
-    
+    if model_type == "mace":
+        structure_dir = data_cfg["data"].get("structure_dir", "data/processed/mp/structures")
+        # Get z_table from first model
+        first_model = members[0][0]
+        z_table = getattr(first_model, "z_table", None)
+        r_max = data_cfg.get("model", {}).get("r_max", 5.0)
+        dataset = StructureDataset(df_split, target_col, structure_dir,
+                                   r_max=r_max, z_table=z_table)
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=args.batch_size, shuffle=False,
+            num_workers=0, collate_fn=mace_collate)
+    else:
+        dataset = GraphNPZDataset(df_split, target_col)
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=args.batch_size, shuffle=False,
+            num_workers=0, collate_fn=collate)
+
     # Run inference
-    results_df = run_ensemble_inference(members, loader, device, calibration_params)
+    results_df = run_ensemble_inference(
+        members, loader, device, model_type=model_type,
+        df_meta=df_split, calibration_params=calibration_params)
     
     # Add decision columns
     results_df = add_decision_columns(results_df)

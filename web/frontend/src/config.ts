@@ -1,11 +1,11 @@
 const isProduction = process.env.NODE_ENV === "production";
 
-// Fallback to the live backend URL if environment variable is missing in production
-// Fallback to localhost:8001 for local development
+// NEXT_PUBLIC_API_URL takes priority (set in Vercel/Render dashboard).
+// Fallback: Render backend in production, localhost in development.
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   (isProduction
-    ? "https://cathode-backend-o4js3vzl2a-uc.a.run.app"
+    ? "https://cathode-screening-api.onrender.com"
     : "http://localhost:8000");
 
 export const API_KEY = process.env.NEXT_PUBLIC_API_KEY;

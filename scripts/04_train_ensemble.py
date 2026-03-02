@@ -55,9 +55,15 @@ def train_single_member(
     cfg["train"]["seed"] = seed
     cfg["project"]["run_id"] = f"member_{member_idx}"
     
-    # Set artifacts/reports to be inside member directory
-    cfg["project"]["artifacts_dir"] = str(member_dir.relative_to(Path(cfg["project"]["output_dir"])))
-    cfg["project"]["reports_dir"] = str(member_dir.relative_to(Path(cfg["project"]["output_dir"])))
+    # Set artifacts/reports to be inside member directory.
+    # Build the relative path directly to avoid relative_to(Path(".")) issues on Windows/Py3.10.
+    base_output = Path(cfg["project"]["output_dir"])
+    try:
+        rel = str(member_dir.relative_to(base_output))
+    except ValueError:
+        rel = str(member_dir)
+    cfg["project"]["artifacts_dir"] = rel
+    cfg["project"]["reports_dir"] = rel
     
     # Write member-specific config
     temp_config = member_dir / "config.yaml"
@@ -106,27 +112,31 @@ def main():
                     help="Base seed for generating member seeds (default: from config)")
     ap.add_argument("--member", type=int, default=None,
                     help="Train only this member index (0 to K-1). For parallel training.")
+    ap.add_argument("--seeds", type=str, default=None,
+                    help="Comma-separated seeds (overrides --k and --base-seed)")
     ap.add_argument("--skip-existing", action="store_true",
                     help="Skip members that already have checkpoints")
     ap.add_argument("--run-id", type=str, default=None,
                     help="Ensemble run ID (default: ensemble_<timestamp>)")
     args = ap.parse_args()
-    
+
     # Load base config
     cfg = load_cfg(args.config)
-    
-    # Determine base seed
+
+    # Determine seeds: explicit list takes priority, then base_seed + k
     base_seed = args.base_seed or cfg["train"].get("seed", 42)
-    
-    # Generate seeds for all members
-    seeds = generate_seeds(base_seed, args.k)
-    
+    if args.seeds:
+        seeds = [int(s) for s in args.seeds.split(",")]
+        args.k = len(seeds)
+    else:
+        seeds = generate_seeds(base_seed, args.k)
+
     # Set up ensemble directory
     base_output = Path(cfg["project"]["output_dir"])
     run_id = args.run_id or f"ensemble_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     ensemble_dir = base_output / "artifacts" / "models" / run_id
     ensemble_dir.mkdir(parents=True, exist_ok=True)
-    
+
     print(f"Ensemble training configuration:")
     print(f"  K = {args.k}")
     print(f"  Base seed = {base_seed}")

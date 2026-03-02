@@ -16,16 +16,17 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from cathode_screening.common.serialization import safe_torch_load
+from cathode_screening.common.serialization import safe_torch_load, Normalizer
 from cathode_screening.inference.artifact_manifest import (
     validate_manifest,
     verify_manifest_signature,
@@ -36,6 +37,7 @@ from cathode_screening.evaluation.conformal import (
 )
 from cathode_screening.models.cgcnn.model import CGCNN
 
+logger = logging.getLogger(__name__)
 
 # Stability thresholds (eV/atom)
 THRESH_STABLE = 0.05
@@ -104,21 +106,6 @@ class DecisionOutput:
         }
 
 
-class Normalizer:
-    """Target normalizer (matches training)."""
-    
-    def __init__(self, mean: float = 0.0, std: float = 1.0):
-        self.mean = mean
-        self.std = std
-    
-    def denorm(self, x: torch.Tensor) -> torch.Tensor:
-        return x * self.std + self.mean
-    
-    def load_state_dict(self, state_dict: Dict):
-        self.mean = state_dict["mean"]
-        self.std = state_dict["std"]
-
-
 def _normalize_path(value: str | Path) -> Path:
     return Path(str(value).replace("\\", "/"))
 
@@ -183,7 +170,7 @@ class DecisionPredictor:
                 message = f"Artifact manifest validation failed ({len(issues)} issues): {detail}"
                 if strict_manifest:
                     raise RuntimeError(message)
-                print(f"Warning: {message}")
+                logger.warning(message)
         if require_signature and not manifest_path.exists():
             raise FileNotFoundError(f"Manifest not found for signature check: {manifest_path}")
         if manifest_path.exists():
@@ -196,14 +183,14 @@ class DecisionPredictor:
                 if not signature_path.exists():
                     if require_signature:
                         raise FileNotFoundError(f"Manifest signature not found: {signature_path}")
-                    print(f"Warning: Manifest signature not found at {signature_path}")
+                    logger.warning("Manifest signature not found at %s", signature_path)
                 else:
                     ok = verify_manifest_signature(manifest_path, signature_path, signing_key)
                     if not ok:
                         message = f"Manifest signature verification failed: {signature_path}"
                         if require_signature:
                             raise RuntimeError(message)
-                        print(f"Warning: {message}")
+                        logger.warning(message)
         
         # Load ensemble metadata (artifact root or direct ensemble dir)
         ensemble_dir = artifact_dir
@@ -271,13 +258,13 @@ class DecisionPredictor:
             if calib_path.exists():
                 try:
                     calibrator = ConformalCalibrator.from_file(calib_path)
-                    print(
-                        f"Loaded conformal calibration from {calib_path}: "
-                        f"delta_upper={calibrator.delta_upper:.4f}, "
-                        f"delta_lower={calibrator.delta_lower:.4f}"
+                    logger.info(
+                        "Loaded conformal calibration from %s: "
+                        "delta_upper=%.4f, delta_lower=%.4f",
+                        calib_path, calibrator.delta_upper, calibrator.delta_lower,
                     )
                 except Exception as exc:
-                    print(f"Warning: Could not load calibration params: {exc}")
+                    logger.warning("Could not load calibration params: %s", exc)
                 break
 
         # Load OOD gate

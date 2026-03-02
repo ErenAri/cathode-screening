@@ -15,6 +15,39 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torch.optim.lr_scheduler import MultiStepLR
 from pymatgen.core import Composition
 
+# ---------------------------------------------------------------------------
+# Model-agnostic forward helpers
+# ---------------------------------------------------------------------------
+
+def _model_forward(model, batch_data, model_type, debug=False):
+    """Unified forward call for CGCNN and MACE models."""
+    if model_type == "mace":
+        return model(batch_data, debug=debug)
+    # CGCNN path
+    x, src, dst, e, b = batch_data
+    return model(x, src, dst, e, b, debug=debug)
+
+
+def _unpack_batch(batch, model_type, device):
+    """Unpack a DataLoader batch → (batch_data, y) on *device*.
+
+    For CGCNN: batch is (x, src, dst, e, batch_index, y)
+    For MACE:  batch is (data_dict, y)
+    """
+    if model_type == "mace":
+        data_dict, y = batch
+        data_dict = {
+            k: v.to(device) if isinstance(v, torch.Tensor) else v
+            for k, v in data_dict.items()
+        }
+        return data_dict, y.to(device)
+    # CGCNN
+    x, src, dst, e, b, y = batch
+    return (
+        (x.to(device), src.to(device), dst.to(device), e.to(device), b.to(device)),
+        y.to(device),
+    )
+
 # Stability thresholds (eV/atom)
 THRESH_STABLE = 0.05      # Ehull < 0.05 = stable (KEEP)
 THRESH_METASTABLE = 0.10  # Ehull < 0.10 = metastable (MAYBE)
@@ -44,7 +77,15 @@ class Normalizer:
 
 def load_cfg(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    try:
+        from cathode_screening.common.config import validate_training_config
+        issues = validate_training_config(cfg)
+        for issue in issues:
+            print(f"[config warning] {issue}")
+    except ImportError:
+        pass
+    return cfg
 
 
 def set_seed(seed: int):
@@ -483,17 +524,19 @@ def compute_decision_quantile(q10, q50, q90, p_stable=None):
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, normalizer=None):
+def evaluate(model, loader, device, normalizer=None, model_type="cgcnn"):
     """Comprehensive evaluation with quantile regression outputs."""
     model.eval()
     ys = []
     q10s, q50s, q90s = [], [], []
     p_stables = []
     p_metas = []
-    
-    for x, src, dst, e, b, y in loader:
-        x, src, dst, e, b, y = x.to(device), src.to(device), dst.to(device), e.to(device), b.to(device), y.to(device)
-        q10, q50, q90, logit_stable, logit_meta = model(x, src, dst, e, b)
+
+    for batch in loader:
+        batch_data, y = _unpack_batch(batch, model_type, device)
+        q10, q50, q90, logit_stable, logit_meta = _model_forward(
+            model, batch_data, model_type
+        )
         
         # Denormalize quantile predictions
         if normalizer is not None:
@@ -704,41 +747,72 @@ def main():
     df_test = df[df["material_id"].isin(set(splits["test"]))].reset_index(drop=True)
 
     target = cfg["data"]["target"]["name"]
-    train_ds = GraphNPZDataset(df_train, target_col=target)
-    val_ds = GraphNPZDataset(df_val, target_col=target)
-    test_ds = GraphNPZDataset(df_test, target_col=target)
+    model_type = str(cfg["model"].get("type", "cgcnn"))
 
-    bs = int(cfg["train"]["batch_size"])
-    nw = int(cfg["train"]["num_workers"])
-    
-    # Balanced sampling config - DELAYED start to stabilize early training
-    use_balanced = cfg["train"].get("balanced_sampling", True)
-    balanced_start_epoch = int(cfg["train"].get("balanced_sampling_start_epoch", 6))
-    
-    # Create BOTH loaders - we'll switch between them
-    train_sampler = create_balanced_sampler(df_train, target)
-    train_loader_balanced = DataLoader(train_ds, batch_size=bs, sampler=train_sampler, 
-                                       num_workers=nw, collate_fn=collate, pin_memory=True)
-    train_loader_unbalanced = DataLoader(train_ds, batch_size=bs, shuffle=True, 
-                                         num_workers=nw, collate_fn=collate, pin_memory=True)
-    
-    # Start with unbalanced (vanilla shuffle) for stability
-    train_loader = train_loader_unbalanced if use_balanced else train_loader_unbalanced
-    
-    val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=nw, collate_fn=collate, pin_memory=True)
-    test_loader = DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=nw, collate_fn=collate, pin_memory=True)
-
+    # --- Device + model creation (before datasets, so MACE z_table is available) ---
     device = torch.device("cuda" if torch.cuda.is_available() and cfg["train"]["device"] in ["auto", "cuda"] else "cpu")
     print(f"Using device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
 
-    node_in = int(cfg["model"].get("node_in_dim", 6))
-    node_dim = int(cfg["model"]["node_embed_dim"])
-    edge_dim = int(cfg["model"]["edge_rbf_bins"])
-    layers = int(cfg["model"]["message_passing_layers"])
-    dropout = float(cfg["model"]["dropout"])
-    pooling = str(cfg["model"]["pooling"])
+    if model_type == "mace":
+        from cathode_screening.models.mace_finetune.model import MACEFineTuner
+        model = MACEFineTuner.from_pretrained(
+            model_name=str(cfg["model"].get("backbone", "medium")),
+            head_dim=int(cfg["model"].get("head_dim", 128)),
+            dropout=float(cfg["model"].get("dropout", 0.1)),
+            freeze_backbone=bool(cfg["model"].get("freeze_backbone", True)),
+            unfreeze_last_n=int(cfg["model"].get("unfreeze_last_n", 1)),
+            device=str(device),
+        ).to(device)
+    else:
+        node_in = int(cfg["model"].get("node_in_dim", 6))
+        node_dim = int(cfg["model"]["node_embed_dim"])
+        edge_dim = int(cfg["model"]["edge_rbf_bins"])
+        layers = int(cfg["model"]["message_passing_layers"])
+        dropout = float(cfg["model"]["dropout"])
+        pooling = str(cfg["model"]["pooling"])
+        model = CGCNN(node_in=node_in, node_dim=node_dim, edge_dim=edge_dim, layers=layers, dropout=dropout, pooling=pooling).to(device)
 
-    model = CGCNN(node_in=node_in, node_dim=node_dim, edge_dim=edge_dim, layers=layers, dropout=dropout, pooling=pooling).to(device)
+    # --- Dataset + collate depend on model type ---
+    if model_type == "mace":
+        from cathode_screening.models.mace_finetune.data import (
+            StructureDataset,
+            mace_collate,
+        )
+        structure_dir = cfg["data"].get(
+            "structure_dir",
+            str(Path(cfg["data"]["processed_dir"]) / "structures"),
+        )
+        z_table = getattr(model, "z_table", None)
+        r_max = float(cfg["model"].get("r_max", 5.0))
+        train_ds = StructureDataset(df_train, target, structure_dir, r_max=r_max, z_table=z_table)
+        val_ds = StructureDataset(df_val, target, structure_dir, r_max=r_max, z_table=z_table)
+        test_ds = StructureDataset(df_test, target, structure_dir, r_max=r_max, z_table=z_table)
+        collate_fn = mace_collate
+    else:
+        train_ds = GraphNPZDataset(df_train, target_col=target)
+        val_ds = GraphNPZDataset(df_val, target_col=target)
+        test_ds = GraphNPZDataset(df_test, target_col=target)
+        collate_fn = collate
+
+    bs = int(cfg["train"]["batch_size"])
+    nw = int(cfg["train"]["num_workers"])
+
+    # Balanced sampling config - DELAYED start to stabilize early training
+    use_balanced = cfg["train"].get("balanced_sampling", False if model_type == "mace" else True)
+    balanced_start_epoch = int(cfg["train"].get("balanced_sampling_start_epoch", 6))
+
+    # Create BOTH loaders - we'll switch between them
+    train_sampler = create_balanced_sampler(df_train, target)
+    train_loader_balanced = DataLoader(train_ds, batch_size=bs, sampler=train_sampler,
+                                       num_workers=nw, collate_fn=collate_fn, pin_memory=True)
+    train_loader_unbalanced = DataLoader(train_ds, batch_size=bs, shuffle=True,
+                                         num_workers=nw, collate_fn=collate_fn, pin_memory=True)
+
+    # Start with unbalanced (vanilla shuffle) for stability
+    train_loader = train_loader_unbalanced if use_balanced else train_loader_unbalanced
+
+    val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=nw, collate_fn=collate_fn, pin_memory=True)
+    test_loader = DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=nw, collate_fn=collate_fn, pin_memory=True)
 
     # Create target normalizer from training data (like original CGCNN)
     train_targets = torch.tensor(df_train[target].values, dtype=torch.float32)
@@ -747,17 +821,24 @@ def main():
 
     lr = float(cfg["train"]["optimizer"]["lr"])
     wd = float(cfg["train"]["optimizer"]["weight_decay"])
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+    if model_type == "mace" and hasattr(model, "get_param_groups"):
+        lr_bb_factor = float(cfg["train"]["optimizer"].get("lr_backbone_factor", 0.01))
+        param_groups = model.get_param_groups(lr_backbone=lr * lr_bb_factor, lr_heads=lr)
+        opt = torch.optim.AdamW(param_groups, weight_decay=wd)
+    else:
+        opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
     # MultiStepLR scheduler (like original CGCNN)
     lr_milestones = cfg["train"].get("scheduler", {}).get("milestones", [60, 80])
     lr_gamma = cfg["train"].get("scheduler", {}).get("gamma", 0.1)
     scheduler = MultiStepLR(opt, milestones=lr_milestones, gamma=lr_gamma)
+    base_lrs = [float(pg["lr"]) for pg in opt.param_groups]
 
     epochs = int(cfg["train"]["epochs"])
     patience = int(cfg["train"]["early_stopping"]["patience"])
-    min_log_sigma = float(cfg["model"]["heads"]["min_log_sigma"])
-    max_log_sigma = float(cfg["model"]["heads"]["max_log_sigma"])
+    heads_cfg = cfg["model"].get("heads", {})
+    min_log_sigma = float(heads_cfg.get("min_log_sigma", -4.0))
+    max_log_sigma = float(heads_cfg.get("max_log_sigma", 2.0))
 
     run_id = cfg["project"].get("run_id") or f"run_seed{seed}"
     art_dir = Path(cfg["project"]["output_dir"]) / cfg["project"].get("artifacts_dir", "data/artifacts") / run_id
@@ -776,14 +857,19 @@ def main():
     
     # Warmup config
     warmup_epochs = int(cfg["train"].get("warmup_epochs", 5))
-    base_lr = lr
+    grad_accum_steps = max(1, int(cfg["train"].get("grad_accum_steps", 1)))
+    if grad_accum_steps > 1:
+        print(
+            f"Gradient accumulation enabled: steps={grad_accum_steps} "
+            f"(effective batch size={bs * grad_accum_steps})"
+        )
 
     for ep in range(1, epochs + 1):
-        # LINEAR WARMUP: ramp lr from 0 to base_lr over warmup_epochs
+        # LINEAR WARMUP: preserve per-parameter-group LR ratios
         if ep <= warmup_epochs:
-            warmup_lr = base_lr * (ep / warmup_epochs)
-            for param_group in opt.param_groups:
-                param_group['lr'] = warmup_lr
+            warmup_scale = ep / warmup_epochs
+            for i, param_group in enumerate(opt.param_groups):
+                param_group["lr"] = base_lrs[i] * warmup_scale
         
         # DELAYED BALANCED SAMPLING: switch at balanced_start_epoch
         if use_balanced and ep == balanced_start_epoch:
@@ -793,31 +879,67 @@ def main():
         model.train()
         epoch_losses = {'loss_quantile': 0, 'loss_cls_stable': 0, 'loss_cls_meta': 0}
         n_batches = 0
+        opt.zero_grad(set_to_none=True)
         
-        for batch_idx, (x, src, dst, e, b, y) in enumerate(train_loader):
-            x, src, dst, e, b, y = x.to(device), src.to(device), dst.to(device), e.to(device), b.to(device), y.to(device)
-            
+        for batch_idx, raw_batch in enumerate(train_loader):
+            batch_data, y = _unpack_batch(raw_batch, model_type, device)
+
             # Debug first batch of first epoch
             debug_this_batch = (ep == 1 and batch_idx == 0)
             if debug_this_batch:
-                print(f"\n[DEBUG BATCH] x.shape={x.shape}, batch_index unique={b.unique().shape[0]} graphs")
+                if model_type != "mace":
+                    x_dbg = batch_data[0]
+                    b_dbg = batch_data[4]
+                    print(f"\n[DEBUG BATCH] x.shape={x_dbg.shape}, batch_index unique={b_dbg.unique().shape[0]} graphs")
                 print(f"[DEBUG BATCH] y range: [{y.min().item():.4f}, {y.max().item():.4f}], std={y.std().item():.4f}")
-            
+
             # Keep raw targets for classification, normalize for regression
             y_raw = y.clone()
             y_norm = normalizer.norm(y)
-            
-            q10, q50, q90, logit_stable, logit_meta = model(x, src, dst, e, b, debug=debug_this_batch)
+
+            try:
+                q10, q50, q90, logit_stable, logit_meta = _model_forward(
+                    model, batch_data, model_type, debug=debug_this_batch
+                )
+            except RuntimeError as exc:
+                err = str(exc).lower()
+                if (
+                    model_type == "mace"
+                    and device.type == "cuda"
+                    and (
+                        "cublas_status_execution_failed" in err
+                        or "cuda out of memory" in err
+                        or "cuda error" in err
+                    )
+                ):
+                    n_graphs = int(y.shape[0])
+                    n_nodes = int(batch_data["positions"].shape[0])
+                    n_edges = int(batch_data["edge_index"].shape[1])
+                    raise RuntimeError(
+                        "MACE CUDA forward failed (likely GPU memory pressure from a large "
+                        f"variable-size batch): batch_graphs={n_graphs}, "
+                        f"batch_nodes={n_nodes}, batch_edges={n_edges}, train.batch_size={bs}. "
+                        "Try lowering train.batch_size (for example 16) and setting "
+                        "train.grad_accum_steps > 1 to preserve effective batch size."
+                    ) from exc
+                raise
             
             loss, loss_dict = compute_multi_task_loss(
                 q10, q50, q90, logit_stable, logit_meta, y_norm, y_raw,
                 cls_weight=cls_weight
             )
             
-            opt.zero_grad(set_to_none=True)
+            loss = loss / grad_accum_steps
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg["train"]["grad_clip_norm"]))
-            opt.step()
+            should_step = ((batch_idx + 1) % grad_accum_steps == 0) or (
+                (batch_idx + 1) == len(train_loader)
+            )
+            if should_step:
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), float(cfg["train"]["grad_clip_norm"])
+                )
+                opt.step()
+                opt.zero_grad(set_to_none=True)
             
             for k, v in loss_dict.items():
                 epoch_losses[k] += v
@@ -826,16 +948,22 @@ def main():
         # Step scheduler only after warmup completes
         if ep > warmup_epochs:
             scheduler.step()
-        val_metrics = evaluate(model, val_loader, device, normalizer=normalizer)
+        val_metrics = evaluate(model, val_loader, device, normalizer=normalizer, model_type=model_type)
         val_mae = val_metrics["mae"]
-        cur_lr = opt.param_groups[0]['lr']  # Get actual LR (includes warmup)
+        if len(opt.param_groups) > 1:
+            lr_msg = (
+                f"lr_head={opt.param_groups[-1]['lr']:.6f} "
+                f"lr_backbone={opt.param_groups[0]['lr']:.6f}"
+            )
+        else:
+            lr_msg = f"lr={opt.param_groups[0]['lr']:.6f}"
         
         # Average epoch losses
         for k in epoch_losses:
             epoch_losses[k] /= max(n_batches, 1)
         
         # Comprehensive logging (quantile-based)
-        print(f"epoch={ep} lr={cur_lr:.6f} mae={val_mae:.4f} rmse={val_metrics['rmse']:.4f} "
+        print(f"epoch={ep} {lr_msg} mae={val_mae:.4f} rmse={val_metrics['rmse']:.4f} "
               f"coverage_80={val_metrics['coverage_80']:.2f}")
         print(f"  quantiles: q10_p50={val_metrics['q10_p50']:.3f} q50_p50={val_metrics['q50_p50']:.3f} "
               f"q90_p50={val_metrics['q90_p50']:.3f} interval_width={val_metrics['interval_width_p50']:.3f}")
@@ -893,9 +1021,9 @@ def main():
     model.eval()
     val_logits_stable, val_logits_meta, val_labels = [], [], []
     with torch.no_grad():
-        for x, src, dst, e, b, y in val_loader:
-            x, src, dst, e, b, y = x.to(device), src.to(device), dst.to(device), e.to(device), b.to(device), y.to(device)
-            _, _, _, logit_stable, logit_meta = model(x, src, dst, e, b)  # q10, q50, q90, logit_stable, logit_meta
+        for raw_batch in val_loader:
+            batch_data, y = _unpack_batch(raw_batch, model_type, device)
+            _, _, _, logit_stable, logit_meta = _model_forward(model, batch_data, model_type)
             val_logits_stable.append(logit_stable)
             val_logits_meta.append(logit_meta)
             val_labels.append(y)
@@ -912,8 +1040,8 @@ def main():
     temp_meta = temp_scaler_meta.calibrate(val_logits_meta, label_meta)
     print(f"Calibrated temperatures: stable={temp_stable:.3f}, meta={temp_meta:.3f}")
 
-    val_metrics = evaluate(model, val_loader, device, normalizer=normalizer)
-    test_metrics = evaluate(model, test_loader, device, normalizer=normalizer)
+    val_metrics = evaluate(model, val_loader, device, normalizer=normalizer, model_type=model_type)
+    test_metrics = evaluate(model, test_loader, device, normalizer=normalizer, model_type=model_type)
 
     report = {
         "run_id": run_id,

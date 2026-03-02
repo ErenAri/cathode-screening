@@ -6,8 +6,27 @@ from pathlib import Path
 from typing import Any, Optional
 
 import torch
+from typing import Dict
 
 logger = logging.getLogger(__name__)
+
+
+class Normalizer:
+    """Target normalizer for model predictions (Z-score denormalization).
+
+    Shared implementation used by ensemble and decision predictors.
+    """
+
+    def __init__(self, mean: float = 0.0, std: float = 1.0) -> None:
+        self.mean = mean
+        self.std = std
+
+    def denorm(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.std + self.mean
+
+    def load_state_dict(self, state_dict: Dict) -> None:
+        self.mean = state_dict["mean"]
+        self.std = state_dict["std"]
 
 
 def _env_bool(name: str, default: bool = False) -> bool:

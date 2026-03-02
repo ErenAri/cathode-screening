@@ -1,0 +1,76 @@
+﻿# configs/train_mace_ehull.yaml
+# Fine-tune MACE-MP-0 backbone for energy_above_hull prediction.
+#
+# Pre-requisite: run  scripts/02b_cache_structures.py --config configs/dataset_mp.yaml
+# to build the structure cache in data/processed/mp/structures/
+
+project:
+  name: cathode-screening
+  run_id: null
+  output_dir: .
+  artifacts_dir: data/artifacts
+  reports_dir: data/reports
+
+data:
+  dataset_name: mp_cathodes_v1
+  processed_dir: data/processed/mp
+  structure_dir: data/processed/mp/structures   # <-- MACE-specific
+  splits_manifest: data/splits/mp/splits_mp_cathodes_v1.json
+  target:
+    name: energy_above_hull
+    type: regression
+
+model:
+  type: mace
+  backbone: medium          # small | medium | large  (MACE-MP-0 variant)
+  head_dim: 128             # Hidden dim for quantile / classifier heads
+  dropout: 0.1
+  freeze_backbone: true     # Freeze MACE backbone params
+  unfreeze_last_n: 1        # Unfreeze last N interaction blocks (0 = pure feature extraction)
+  r_max: 5.0                # Cutoff for MACE neighbor list (Angstrom)
+
+loss:
+  cls_weight: 0.05
+
+train:
+  device: auto
+  batch_size: 16            # Safer micro-batch for 6-8GB GPUs (e.g., RTX 2060)
+  grad_accum_steps: 4       # Effective batch size ~= 64 without peak-memory spikes
+  num_workers: 2            # Neighbor list computation on CPU
+  epochs: 60
+  warmup_epochs: 3
+  early_stopping:
+    monitor: val_mae
+    patience: 12
+  optimizer:
+    name: adamw
+    lr: 0.001               # Head LR â€” backbone LR is 100Ã— smaller
+    lr_backbone_factor: 0.01  # backbone_lr = lr * factor = 1e-5
+    weight_decay: 0.0
+  scheduler:
+    type: constant
+    milestones: [40, 50]
+    gamma: 0.1
+  grad_clip_norm: 1.0
+  seed: 42
+
+metrics:
+  report:
+    - mae
+    - rmse
+    - spearman
+    - topk_hit_rate
+    - ece
+  topk:
+    k_values: [10, 25, 50]
+    stable_threshold_ehull: 0.05
+    metastable_threshold_ehull: 0.10
+
+logging:
+  console: true
+  save_every_epoch: false
+  save_best_only: true
+  wandb:
+    enabled: false
+    project: cathode-screening
+

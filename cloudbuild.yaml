@@ -1,8 +1,28 @@
 steps:
   # ==========================================
+  # 0. Quality Gate (lint + unit tests)
+  # ==========================================
+
+  - name: 'python:3.11-slim'
+    id: 'Lint and Test'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --quiet ruff
+        echo "--- Ruff lint ---"
+        ruff check src/ web/ --select E,F,W --ignore E501
+        pip install --quiet -r requirements.txt pytest
+        echo "--- Unit tests ---"
+        PYTHONPATH=src pytest src/cathode_screening/tests/ \
+          --ignore=src/cathode_screening/tests/test_decision_grade.py \
+          --ignore=src/cathode_screening/tests/test_split_leakage.py \
+          -x -q
+
+  # ==========================================
   # 1. Backend Pipeline
   # ==========================================
-  
+
   # Fetch artifacts from GCS (or use local copy if present)
   - name: 'gcr.io/cloud-builders/gsutil'
     id: 'Fetch Artifacts'
@@ -25,6 +45,7 @@ steps:
   # Build Backend Image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'Build Backend'
+    waitFor: ['Fetch Artifacts', 'Lint and Test']
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/cathode-backend', '-f', 'backend.Dockerfile', '.']
 
   # Push Backend Image
@@ -35,31 +56,33 @@ steps:
   # Deploy Backend to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'Deploy Backend'
-    entrypoint: gcloud
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'deploy'
-      - 'cathode-backend'
-      - '--image'
-      - 'gcr.io/$PROJECT_ID/cathode-backend'
-      - '--region'
-      - 'us-central1'
-      - '--platform'
-      - 'managed'
-      - '--allow-unauthenticated'
-      - '--set-env-vars'
-      - 'CATHODE_ENV=production,CATHODE_AUTH_ENABLED=false,CATHODE_MODEL_TYPE=chgnet,CATHODE_REQUIRE_MANIFEST_SIGNATURE=false,CATHODE_TRUST_PROXY=true,CATHODE_TRUST_PROXY_HOPS=1,CATHODE_FORCE_HTTPS=false,CATHODE_SECURITY_HEADERS=false,CATHODE_PROMETHEUS_ENABLED=true,CATHODE_LOG_REQUESTS=true,CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true,CATHODE_CORS_ORIGINS=*'
-      - '--port'
-      - '8080'
-      - '--memory'
-      - '4Gi'
-      - '--cpu'
-      - '2'
-      - '--timeout'
-      - '300'
-      - '--cpu-boost'
-      - '--max-instances'
-      - '5'
+      - '-c'
+      - |
+        FRONTEND_ORIGIN="${_FRONTEND_ORIGIN}"
+        if [[ -z "$FRONTEND_ORIGIN" ]]; then
+          FRONTEND_ORIGIN=$(gcloud run services describe cathode-frontend \
+            --platform managed --region us-central1 \
+            --format 'value(status.url)' 2>/dev/null || echo "")
+        fi
+        if [[ -z "$FRONTEND_ORIGIN" ]]; then
+          echo "WARNING: _FRONTEND_ORIGIN not set and frontend not yet deployed. CORS will be restrictive."
+          FRONTEND_ORIGIN="https://localhost:3000"
+        fi
+        echo "CORS origin: $FRONTEND_ORIGIN"
+        gcloud run deploy cathode-backend \
+          --image gcr.io/$PROJECT_ID/cathode-backend \
+          --region us-central1 \
+          --platform managed \
+          --allow-unauthenticated \
+          --set-env-vars "CATHODE_ENV=production,CATHODE_AUTH_ENABLED=true,CATHODE_MODEL_TYPE=chgnet,CATHODE_REQUIRE_MANIFEST_SIGNATURE=false,CATHODE_TRUST_PROXY=true,CATHODE_TRUST_PROXY_HOPS=1,CATHODE_FORCE_HTTPS=true,CATHODE_SECURITY_HEADERS=true,CATHODE_PROMETHEUS_ENABLED=true,CATHODE_LOG_REQUESTS=true,CATHODE_ALLOW_UNSAFE_TORCH_LOAD=false,CATHODE_CORS_ORIGINS=$FRONTEND_ORIGIN" \
+          --port 8080 \
+          --memory 4Gi \
+          --cpu 2 \
+          --timeout 300 \
+          --cpu-boost \
+          --max-instances 5
 
   # ==========================================
   # 2. Frontend Pipeline
@@ -124,3 +147,4 @@ substitutions:
   _API_KEYS_SECRET: "cathode-api-keys"
   _MANIFEST_KEY_SECRET: "cathode-manifest-hmac-key"
   _REQUIRE_MANIFEST_SIGNATURE: "true"
+  _FRONTEND_ORIGIN: ""  # Set via --substitutions or auto-resolved from deployed frontend

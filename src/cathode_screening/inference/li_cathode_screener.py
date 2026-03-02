@@ -20,9 +20,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
+import logging
 import numpy as np
 import torch
 from pymatgen.core import Structure
+
+from cathode_screening.common.serialization import safe_torch_load
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -100,7 +105,7 @@ class LiCathodeScreener:
             
             if ckpt_path:
                 model = CHGNet.load()
-                ckpt = torch.load(ckpt_path, map_location=self.device, weights_only=False)
+                ckpt = safe_torch_load(ckpt_path, device=torch.device(self.device))
                 model.load_state_dict(ckpt["model"]["state_dict"])
                 model.to(self.device)
                 model.eval()
@@ -109,7 +114,7 @@ class LiCathodeScreener:
         if not self.models:
             raise RuntimeError(f"No models found in {model_dir}")
         
-        print(f"LiCathodeScreener v1 initialized: {len(self.models)} models on {self.device}")
+        logger.info("LiCathodeScreener v1 initialized: %d models on %s", len(self.models), self.device)
     
     def _get_best_checkpoint(self, model_dir: Path) -> Optional[Path]:
         """Get best checkpoint by MAE."""
@@ -174,7 +179,8 @@ class LiCathodeScreener:
             try:
                 result = model.predict_structure(structure)
                 preds.append(float(result["e"]))
-            except Exception:
+            except (RuntimeError, KeyError, ValueError) as exc:
+                logger.warning("Model prediction failed for %s: %s", material_id, exc)
                 preds.append(float("nan"))
         
         preds = np.array(preds)
@@ -228,8 +234,8 @@ class LiCathodeScreener:
             try:
                 result = self.predict_structure(struct, mid)
                 results.append(result)
-            except Exception as e:
-                print(f"Warning: Failed to predict {mid or i}: {e}")
+            except (RuntimeError, KeyError, ValueError) as exc:
+                logger.warning("Failed to predict %s: %s", mid or i, exc)
         
         # Sort by predicted E_hull (ascending)
         results.sort(key=lambda r: r.pred_ehull)

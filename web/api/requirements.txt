@@ -12,4 +12,6 @@ opentelemetry-instrumentation-fastapi>=0.46b0
 opentelemetry-instrumentation-logging>=0.46b0
 opentelemetry-instrumentation-requests>=0.46b0
 chgnet>=0.3.0
+mace-torch>=0.3.0
+ase>=3.22.0
 numpy>=1.24.0
