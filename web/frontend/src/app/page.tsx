@@ -39,8 +39,8 @@ export default function Home() {
           </span>
         </h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-          Instantly predict thermodynamic stability of Li-cathode materials using our state-of-the-art
-          CHGNet ensemble model. Screen with 6.6× enrichment and &lt;0.3% false-discard rate.
+          Instantly predict thermodynamic stability of Li-cathode materials using our governance-approved
+          MACE-MP-0 ensemble. 92.7% KEEP precision, 0% false-kill rate, 90% calibrated coverage.
         </p>
 
         {/* CTA Buttons */}
@@ -74,8 +74,8 @@ export default function Home() {
           </div>
           <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
             <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center mb-4 text-indigo-600 font-bold">2</div>
-            <h3 className="font-semibold text-lg mb-2">CHGNet Inference</h3>
-            <p className="text-gray-600 text-sm">5-member CHGNet ensemble predicts E<sub>hull</sub> with calibrated uncertainty.</p>
+            <h3 className="font-semibold text-lg mb-2">MACE Ensemble Inference</h3>
+            <p className="text-gray-600 text-sm">5-member MACE-MP-0 fine-tuned ensemble predicts E<sub>hull</sub> with conformal calibration.</p>
           </div>
           <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-4 text-green-600 font-bold">3</div>
@@ -91,7 +91,7 @@ export default function Home() {
           <div>
             <h2 className="text-3xl font-bold text-gray-900 mb-6">Built on Rigorous Science</h2>
             <p className="text-lg text-gray-600 mb-6">
-              We leverage a deep ensemble of CHGNet (Crystal Hamiltonian Graph Neural Network) models, fine-tuned on 11,377 Li-cathode materials.
+              We leverage a 5-member deep ensemble of MACE-MP-0 (Multi-Atomic Cluster Expansion) foundation models, fine-tuned on 17,227 Li-cathode materials from the Materials Project.
             </p>
             <ul className="space-y-4 mb-8">
               <li className="flex items-start gap-3">
@@ -105,7 +105,7 @@ export default function Home() {
                 <div className="mt-1 w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-xs font-bold">✓</div>
                 <div>
                   <h4 className="font-semibold text-gray-900">Uncertainty Quantification</h4>
-                  <p className="text-sm text-gray-600">5-model ensemble provides epistemic uncertainty, helping you trust high-stakes predictions.</p>
+                  <p className="text-sm text-gray-600">Aleatoric (quantile regression) + epistemic (inter-model disagreement) + conformal calibration for 90% coverage.</p>
                 </div>
               </li>
               <li className="flex items-start gap-3">
@@ -124,23 +124,23 @@ export default function Home() {
 
           <div className="grid grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 text-center">
-              <p className="text-4xl font-extrabold text-blue-600 mb-2">6.66×</p>
+              <p className="text-4xl font-extrabold text-blue-600 mb-2">2.12×</p>
               <p className="font-semibold text-gray-900">Enrichment Factor</p>
-              <p className="text-xs text-gray-500 mt-2">EF@1% at E<sub>hull</sub> &lt; 10 meV</p>
+              <p className="text-xs text-gray-500 mt-2">EF@10 on test set</p>
             </div>
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 text-center">
-              <p className="text-4xl font-extrabold text-green-600 mb-2">0.032</p>
+              <p className="text-4xl font-extrabold text-green-600 mb-2">0.030</p>
               <p className="font-semibold text-gray-900">MAE (eV/atom)</p>
-              <p className="text-xs text-gray-500 mt-2">SOAP-LOCO test set</p>
+              <p className="text-xs text-gray-500 mt-2">Test set (1,013 materials)</p>
             </div>
             <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 text-center">
-              <p className="text-4xl font-extrabold text-indigo-600 mb-2">&lt;0.3%</p>
+              <p className="text-4xl font-extrabold text-indigo-600 mb-2">0.0%</p>
               <p className="font-semibold text-gray-900">False Kill Rate</p>
-              <p className="text-xs text-gray-500 mt-2">Stable materials retained</p>
+              <p className="text-xs text-gray-500 mt-2">No stable materials discarded</p>
             </div>
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-2xl text-white text-center">
-              <p className="text-3xl font-bold mb-2">11,377</p>
-              <p className="text-gray-400">Li-Cathode Materials</p>
+              <p className="text-3xl font-bold mb-2">17,227</p>
+              <p className="text-gray-400">TMO Cathode Materials</p>
             </div>
           </div>
         </div>
