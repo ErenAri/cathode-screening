@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import API_BASE_URL from "@/config";
 
@@ -34,14 +34,39 @@ interface PredictionResult {
 export default function Predict() {
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
+    const [progress, setProgress] = useState(0);
     const [result, setResult] = useState<PredictionResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopProgressTimer = () => {
+        if (progressTimerRef.current !== null) {
+            clearInterval(progressTimerRef.current);
+            progressTimerRef.current = null;
+        }
+    };
+
+    const progressMessage =
+        progress < 20
+            ? "Uploading CIF..."
+            : progress < 45
+                ? "Parsing crystal structure..."
+                : progress < 75
+                    ? "Running ensemble inference..."
+                    : "Calibrating uncertainty...";
+
+    useEffect(() => {
+        return () => {
+            stopProgressTimer();
+        };
+    }, []);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setFile(e.target.files[0]);
             setResult(null);
             setError(null);
+            setProgress(0);
         }
     };
 
@@ -50,6 +75,16 @@ export default function Predict() {
 
         setLoading(true);
         setError(null);
+        setProgress(8);
+        stopProgressTimer();
+        progressTimerRef.current = setInterval(() => {
+            setProgress((prev) => {
+                if (prev >= 92) return prev;
+                if (prev < 35) return Math.min(prev + 5, 35);
+                if (prev < 70) return Math.min(prev + 3, 70);
+                return Math.min(prev + 1.5, 92);
+            });
+        }, 450);
 
         try {
             const formData = new FormData();
@@ -63,21 +98,27 @@ export default function Predict() {
             const data = await response.json();
 
             if (data.success) {
+                setProgress(100);
                 setResult(data.prediction);
             } else {
                 setError(data.error || "Prediction failed");
+                setProgress(0);
             }
         } catch {
             setError("Failed to connect to server.");
+            setProgress(0);
         } finally {
+            stopProgressTimer();
             setLoading(false);
         }
     };
 
     const resetForm = () => {
+        stopProgressTimer();
         setFile(null);
         setResult(null);
         setError(null);
+        setProgress(0);
     };
 
     return (
@@ -159,6 +200,20 @@ export default function Predict() {
                                             </span>
                                         ) : "Predict Stability"}
                                     </button>
+                                    {loading && (
+                                        <div className="mt-4">
+                                            <div className="flex items-center justify-between text-xs text-gray-600">
+                                                <span>{progressMessage}</span>
+                                                <span>{Math.round(progress)}%</span>
+                                            </div>
+                                            <div className="mt-2 h-2 rounded-full bg-blue-100 overflow-hidden">
+                                                <div
+                                                    className="h-full bg-blue-600 transition-all duration-300 ease-out"
+                                                    style={{ width: `${Math.max(3, progress)}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Error */}
                                     {error && (

@@ -77,7 +77,7 @@
   },
   "best_val_mae": 0.02947291173040867,
   "best_screening_score": 0.9718384697130712,
-  "checkpoint": "artifacts\\models\\mace_ensemble_v1\\member_1\\member_1\\best.pt",
+  "checkpoint": "member_1/member_1/best.pt",
   "calibration": {
     "temp_stable": 0.9650403261184692,
     "temp_meta": 0.9233917593955994
