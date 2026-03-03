@@ -1,0 +1,37 @@
+{
+  "class Normalizer": [
+    "scripts/04_train.py",
+    "scripts/06_build_ood_index.py",
+    "scripts/06_calibrate_ood.py",
+    "scripts/07_predict_ensemble.py",
+    "scripts/shared_imports.py",
+    "src/cathode_screening/common/serialization.py"
+  ],
+  "class CGCNNBlock": [
+    "scripts/04_train.py",
+    "scripts/06_build_ood_index.py",
+    "scripts/06_calibrate_ood.py",
+    "scripts/07_predict_ensemble.py",
+    "scripts/shared_imports.py",
+    "src/cathode_screening/models/cgcnn/model.py"
+  ],
+  "class CGCNN": [
+    "scripts/04_train.py",
+    "scripts/06_calibrate_ood.py",
+    "scripts/07_predict_ensemble.py",
+    "scripts/shared_imports.py",
+    "src/cathode_screening/models/cgcnn/model.py"
+  ],
+  "class OODGate": [
+    "scripts/07_predict_ensemble.py",
+    "src/cathode_screening/inference/ood.py"
+  ],
+  "def composition_fingerprint": [
+    "scripts/03_make_splits.py",
+    "scripts/04_train.py",
+    "scripts/05_calibrate_conformal.py",
+    "scripts/06_build_ood_index.py",
+    "scripts/07_predict_ensemble.py",
+    "src/cathode_screening/inference/ood.py"
+  ]
+}

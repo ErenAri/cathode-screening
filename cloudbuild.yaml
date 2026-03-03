@@ -16,7 +16,6 @@ steps:
         echo "--- Unit tests ---"
         PYTHONPATH=src pytest src/cathode_screening/tests/ \
           --ignore=src/cathode_screening/tests/test_decision_grade.py \
-          --ignore=src/cathode_screening/tests/test_split_leakage.py \
           -x -q
 
   # ==========================================
@@ -76,7 +75,7 @@ steps:
           --region us-central1 \
           --platform managed \
           --allow-unauthenticated \
-          --set-env-vars "CATHODE_ENV=production,CATHODE_AUTH_ENABLED=true,CATHODE_MODEL_TYPE=chgnet,CATHODE_REQUIRE_MANIFEST_SIGNATURE=false,CATHODE_TRUST_PROXY=true,CATHODE_TRUST_PROXY_HOPS=1,CATHODE_FORCE_HTTPS=true,CATHODE_SECURITY_HEADERS=true,CATHODE_PROMETHEUS_ENABLED=true,CATHODE_LOG_REQUESTS=true,CATHODE_ALLOW_UNSAFE_TORCH_LOAD=false,CATHODE_CORS_ORIGINS=$FRONTEND_ORIGIN" \
+          --set-env-vars "CATHODE_ENV=production,CATHODE_AUTH_ENABLED=true,CATHODE_MODEL_TYPE=chgnet,CATHODE_REQUIRE_MANIFEST_SIGNATURE=${_REQUIRE_MANIFEST_SIGNATURE},CATHODE_TRUST_PROXY=true,CATHODE_TRUST_PROXY_HOPS=1,CATHODE_FORCE_HTTPS=true,CATHODE_SECURITY_HEADERS=true,CATHODE_PROMETHEUS_ENABLED=true,CATHODE_LOG_REQUESTS=true,CATHODE_ALLOW_UNSAFE_TORCH_LOAD=false,CATHODE_CORS_ORIGINS=$FRONTEND_ORIGIN" \
           --port 8080 \
           --memory 4Gi \
           --cpu 2 \

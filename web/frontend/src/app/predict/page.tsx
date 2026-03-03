@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import API_BASE_URL, { API_KEY } from "@/config";
+import API_BASE_URL from "@/config";
 
 interface CathodeProperties {
     gravimetric_capacity_mAhg: number | null;
@@ -55,14 +55,8 @@ export default function Predict() {
             const formData = new FormData();
             formData.append("cif_file", file);
 
-            const headers: HeadersInit = {};
-            if (API_KEY) {
-                headers["X-API-Key"] = API_KEY;
-            }
-
-            const response = await fetch(`${API_BASE_URL}/predict`, {
+            const response = await fetch("/api/predict", {
                 method: "POST",
-                headers,
                 body: formData,
             });
 

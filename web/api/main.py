@@ -196,6 +196,9 @@ STRICT_STARTUP = _env_bool("CATHODE_STRICT_STARTUP", ENVIRONMENT == "production"
 REQUIRE_CALIBRATION = _env_bool(
     "CATHODE_REQUIRE_CALIBRATION", ENVIRONMENT == "production"
 )
+REQUIRE_MANIFEST_SIGNATURE = _env_bool(
+    "CATHODE_REQUIRE_MANIFEST_SIGNATURE", ENVIRONMENT == "production"
+)
 TRUST_PROXY = _env_bool("CATHODE_TRUST_PROXY", False)
 TRUST_PROXY_HOPS = max(_env_int("CATHODE_TRUST_PROXY_HOPS", 1), 0)
 IP_ALLOWLIST = set(_split_values(os.getenv("CATHODE_IP_ALLOWLIST")))
@@ -220,6 +223,42 @@ RAW_CONTENT_TYPES = os.getenv(
     "chemical/x-cif,text/plain,application/octet-stream,application/x-cif,text/cif",
 )
 ALLOWED_CONTENT_TYPES = {t.strip() for t in RAW_CONTENT_TYPES.split(",") if t.strip()}
+ALLOW_UNSAFE_TORCH_LOAD = _env_bool("CATHODE_ALLOW_UNSAFE_TORCH_LOAD", False)
+ALLOW_INSECURE_PROD = _env_bool("CATHODE_ALLOW_INSECURE_PROD", False)
+
+
+def _validate_security_configuration() -> None:
+    """Fail fast on insecure production defaults unless explicitly overridden."""
+    if ENVIRONMENT != "production" or ALLOW_INSECURE_PROD:
+        return
+
+    insecure_reasons = []
+    if not AUTH_ENABLED:
+        insecure_reasons.append("CATHODE_AUTH_ENABLED must be true in production")
+    if not FORCE_HTTPS:
+        insecure_reasons.append("CATHODE_FORCE_HTTPS must be true in production")
+    if ALLOW_UNSAFE_TORCH_LOAD:
+        insecure_reasons.append(
+            "CATHODE_ALLOW_UNSAFE_TORCH_LOAD must be false in production"
+        )
+    if not REQUIRE_MANIFEST_SIGNATURE:
+        insecure_reasons.append(
+            "CATHODE_REQUIRE_MANIFEST_SIGNATURE must be true in production"
+        )
+    if REQUIRE_MANIFEST_SIGNATURE and not os.getenv("CATHODE_MANIFEST_HMAC_KEY"):
+        insecure_reasons.append(
+            "CATHODE_MANIFEST_HMAC_KEY must be set when signature verification is required"
+        )
+
+    if insecure_reasons:
+        detail = "; ".join(insecure_reasons)
+        raise RuntimeError(
+            "Insecure production configuration detected: "
+            f"{detail}. Set CATHODE_ALLOW_INSECURE_PROD=true only for emergency overrides."
+        )
+
+
+_validate_security_configuration()
 
 logger = logging.getLogger("cathode_screening")
 if not logger.handlers:
@@ -1102,49 +1141,42 @@ async def download_screening_proof(proof_id: str, api_key: str = Security(get_ap
 @app.get("/database")
 async def get_database(api_key: str = Security(get_api_key)):
     """Get pre-computed predictions from the database."""
-    import pandas as pd
-    from pathlib import Path
-    
-    # Try to load predictions file
     predictions_path = Path("data/predictions/ensemble_soap_loco_test.parquet")
-    
     if not predictions_path.exists():
-        # Raise 500 error instead of failing silently
         raise HTTPException(status_code=500, detail="Predictions file not found on server")
-    
-    try:
+
+    def _build_database_payload() -> dict:
+        import pandas as pd
+
         df = pd.read_parquet(predictions_path)
-        
-        # Sort by predicted E_hull (best first)
         sort_col = "q50" if "q50" in df.columns else "pred_ehull"
-        df = df.sort_values(sort_col, ascending=True)  # Load all materials
-        
-        # Build response data
+        df = df.sort_values(sort_col, ascending=True)
+
         data = []
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
             pred_ehull = row.get("q50", row.get("pred_ehull", 0))
             std = row.get("epistemic_std", 0.1)
             p_stable = row.get("p_stable", 0.5)
-            
-            unc = classify_uncertainty(std)
-            
-            # Get action
-            action = get_action(p_stable, unc, pred_ehull)
-            
-            data.append({
-                "material_id": row.get("material_id", f"mp-{_}"),
-                "formula": row.get("formula", ""),
-                "pred_ehull": round(float(pred_ehull), 4),
-                "p_stable": round(float(p_stable), 3),
-                "uncertainty": unc,
-                "action": action,
-                "confidence_interval": (0.0, 0.0) # Placeholder if needed
-            })
-        
+            unc = classify_uncertainty(float(std))
+            action = get_action(float(p_stable), unc, float(pred_ehull))
+
+            data.append(
+                {
+                    "material_id": row.get("material_id", f"mp-{idx}"),
+                    "formula": row.get("formula", ""),
+                    "pred_ehull": round(float(pred_ehull), 4),
+                    "p_stable": round(float(p_stable), 3),
+                    "uncertainty": unc,
+                    "action": action,
+                    "confidence_interval": (0.0, 0.0),
+                }
+            )
         return {"success": True, "data": data, "total": len(df)}
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        return await asyncio.to_thread(_build_database_payload)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -1154,6 +1186,27 @@ async def get_database(api_key: str = Security(get_api_key)):
 import re
 
 _CAMPAIGN_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+_PREDICTIONS_PARQUET = Path("data/predictions/ensemble_soap_loco_test.parquet")
+
+
+def _read_predictions_pool_df(parquet_path: Path):
+    import pandas as pd
+
+    df = pd.read_parquet(parquet_path)
+    id_col = "material_id" if "material_id" in df.columns else df.columns[0]
+    df[id_col] = df[id_col].astype(str)
+    return df, id_col
+
+
+async def _load_predictions_pool_df(parquet_path: Path = _PREDICTIONS_PARQUET):
+    if not parquet_path.exists():
+        raise HTTPException(status_code=500, detail="Predictions file not found")
+    try:
+        return await asyncio.to_thread(_read_predictions_pool_df, parquet_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/discovery/campaigns")
@@ -1177,8 +1230,6 @@ async def create_discovery_campaign(
     api_key: str = Security(get_api_key),
 ):
     """Create a new discovery campaign from a predictions parquet pool."""
-    import pandas as pd
-
     if not _CAMPAIGN_NAME_RE.match(body.name):
         raise HTTPException(
             status_code=400,
@@ -1192,9 +1243,8 @@ async def create_discovery_campaign(
     if not parquet_path.exists():
         raise HTTPException(status_code=404, detail=f"Pool source '{body.pool_source}' not found")
 
-    df = pd.read_parquet(parquet_path)
-    id_col = "material_id" if "material_id" in df.columns else df.columns[0]
-    pool_ids = df[id_col].astype(str).tolist()
+    df, id_col = await _load_predictions_pool_df(parquet_path)
+    pool_ids = df[id_col].tolist()
 
     if not pool_ids:
         raise HTTPException(status_code=400, detail="Pool is empty")
@@ -1242,8 +1292,6 @@ async def screen_discovery_candidates(
     api_key: str = Security(get_api_key),
 ):
     """Run ML screening on the remaining candidate pool for the current cycle."""
-    import pandas as pd
-
     path = _campaign_path(name)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
@@ -1259,13 +1307,7 @@ async def screen_discovery_candidates(
     if not state.pool_remaining_ids:
         raise HTTPException(status_code=400, detail="No remaining candidates in pool")
 
-    parquet_path = Path("data/predictions/ensemble_soap_loco_test.parquet")
-    if not parquet_path.exists():
-        raise HTTPException(status_code=500, detail="Predictions file not found")
-
-    df = pd.read_parquet(parquet_path)
-    id_col = "material_id" if "material_id" in df.columns else df.columns[0]
-    df[id_col] = df[id_col].astype(str)
+    df, id_col = await _load_predictions_pool_df()
 
     remaining_set = set(state.pool_remaining_ids)
     pool_df = df[df[id_col].isin(remaining_set)].copy()
@@ -1323,21 +1365,13 @@ async def get_discovery_candidates(
     api_key: str = Security(get_api_key),
 ):
     """Get paginated ranked candidates for a campaign."""
-    import pandas as pd
-
     path = _campaign_path(name)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
 
     state = CampaignState.load(path)
 
-    parquet_path = Path("data/predictions/ensemble_soap_loco_test.parquet")
-    if not parquet_path.exists():
-        raise HTTPException(status_code=500, detail="Predictions file not found")
-
-    df = pd.read_parquet(parquet_path)
-    id_col = "material_id" if "material_id" in df.columns else df.columns[0]
-    df[id_col] = df[id_col].astype(str)
+    df, id_col = await _load_predictions_pool_df()
 
     remaining_set = set(state.pool_remaining_ids)
     pool_df = df[df[id_col].isin(remaining_set)].copy()

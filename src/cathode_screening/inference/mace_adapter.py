@@ -32,6 +32,52 @@ THRESH_STABLE = 0.05
 THRESH_METASTABLE = 0.10
 
 
+def _normalize_path(value: str | Path) -> Path:
+    return Path(str(value).replace("\\", "/"))
+
+
+def _looks_like_windows_abs(value: str) -> bool:
+    return len(value) > 1 and value[1] == ":"
+
+
+def _resolve_checkpoint_path(
+    checkpoint_raw: str,
+    ensemble_dir: Path,
+    artifacts_dir: Path,
+) -> Path:
+    """Resolve checkpoint paths robustly across local/CI/container layouts."""
+    ckpt = _normalize_path(checkpoint_raw)
+    candidates: list[Path] = [ckpt]
+
+    if not ckpt.is_absolute() and not _looks_like_windows_abs(checkpoint_raw):
+        candidates.append(ensemble_dir / ckpt)
+
+        parts = ckpt.parts
+        # Common metadata pattern: artifacts/models/<ensemble_name>/member_x/.../best.pt
+        if len(parts) >= 4 and parts[0] == "artifacts" and parts[1] == "models":
+            if parts[2] == ensemble_dir.name:
+                candidates.append(ensemble_dir / Path(*parts[3:]))
+            candidates.append(artifacts_dir / Path(*parts[1:]))
+        elif len(parts) >= 1 and parts[0] == "models":
+            candidates.append(artifacts_dir / ckpt)
+
+    seen: set[str] = set()
+    deduped: list[Path] = []
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+
+    for candidate in deduped:
+        if candidate.exists():
+            return candidate
+
+    attempted = ", ".join(str(c) for c in deduped)
+    raise FileNotFoundError(f"Checkpoint not found. Tried: {attempted}")
+
+
 class _Normalizer:
     """Simple target normalizer matching training."""
 
@@ -106,11 +152,12 @@ class MACEDecisionService:
         r_max = 5.0
 
         for member_info in meta["members"]:
-            ckpt_path = Path(member_info["checkpoint"])
-            if not ckpt_path.exists():
-                ckpt_path = ensemble_dir / ckpt_path
-            if not ckpt_path.exists():
-                raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+            raw_checkpoint = str(member_info["checkpoint"])
+            ckpt_path = _resolve_checkpoint_path(
+                checkpoint_raw=raw_checkpoint,
+                ensemble_dir=ensemble_dir,
+                artifacts_dir=artifacts_dir,
+            )
 
             ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
             cfg = ckpt["cfg"]

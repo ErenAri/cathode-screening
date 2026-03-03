@@ -12,7 +12,17 @@ services:
       - key: CATHODE_DEVICE
         value: cpu
       - key: CATHODE_AUTH_ENABLED
+        value: "true"
+      - key: CATHODE_REQUIRE_MANIFEST_SIGNATURE
+        value: "true"
+      - key: CATHODE_FORCE_HTTPS
+        value: "true"
+      - key: CATHODE_ALLOW_UNSAFE_TORCH_LOAD
         value: "false"
+      - key: CATHODE_API_KEY_HASHES
+        sync: false  # Set in Render dashboard secret value
+      - key: CATHODE_MANIFEST_HMAC_KEY
+        sync: false  # Set in Render dashboard secret value
       - key: CATHODE_CORS_ORIGINS
         sync: false  # Set manually after Vercel deploy
       - key: CATHODE_RATE_LIMIT_PER_MINUTE
