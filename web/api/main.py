@@ -54,6 +54,9 @@ SCREENING_PROOF_FILES: dict[str, Path] = {
 }
 
 from cathode_screening.inference.artifact_manifest import load_manifest
+from cathode_screening.inference.cathode_guardrails import (
+    evaluate_li_cathode_composition,
+)
 from cathode_screening.monitoring.audit_trail import (
     AuditTrail,
     compute_input_hash,
@@ -218,6 +221,9 @@ REQUIRE_CIF_EXT = os.getenv("CATHODE_REQUIRE_CIF_EXT", "false").strip().lower() 
     "true",
     "yes",
 }
+REQUIRE_CATHODE_COMPOSITION = _env_bool(
+    "CATHODE_REQUIRE_CATHODE_COMPOSITION", ENVIRONMENT == "production"
+)
 RAW_CONTENT_TYPES = os.getenv(
     "CATHODE_ALLOWED_CONTENT_TYPES",
     "chemical/x-cif,text/plain,application/octet-stream,application/x-cif,text/cif",
@@ -536,6 +542,33 @@ def _validate_upload(cif_file: UploadFile, content: bytes) -> None:
         )
 
 
+def _validate_cathode_scope(structure, filename: str) -> None:
+    if not REQUIRE_CATHODE_COMPOSITION:
+        return
+    check = evaluate_li_cathode_composition(structure)
+    if check.is_valid:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=_error_detail(
+            "invalid_cathode_composition",
+            "Input composition is not a supported Li-ion cathode host",
+            filename=filename,
+            formula=check.formula,
+            elements=list(check.elements),
+            transition_metals=list(check.transition_metals),
+            anion_framework=check.anion_framework,
+            reasons=list(check.reasons),
+            requirements={
+                "lithium_present": True,
+                "transition_metal_present": True,
+                "supported_anion_framework": ["O", "S", "Se", "F", "Cl", "Br", "I", "N", "PO4", "SiO4", "BO3"],
+                "multi_element_composition": True,
+            },
+        ),
+    )
+
+
 async def _parse_structure(cif_file: UploadFile):
     content = await cif_file.read()
     _validate_upload(cif_file, content)
@@ -586,6 +619,7 @@ async def _parse_structure(cif_file: UploadFile):
                 filename=filename,
             ),
         )
+    _validate_cathode_scope(structure, filename)
     return structure
 
 
@@ -1209,6 +1243,251 @@ async def _load_predictions_pool_df(parquet_path: Path = _PREDICTIONS_PARQUET):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+from cathode_screening.discovery.ranking import (
+    DEFAULT_RANKING_STRATEGY,
+    RANKING_STRATEGIES,
+    rank_candidates,
+    validate_ranking_strategy,
+)
+from cathode_screening.discovery.async_loop import (
+    DiscoveryJobStore,
+    simulate_dft_outcomes,
+    summarize_outcomes,
+    utc_now_iso,
+)
+
+
+def _resolve_ranking_strategy(state: CampaignState, requested: Optional[str]) -> str:
+    try:
+        return validate_ranking_strategy(requested or state.ranking_strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _format_ranked_candidate(row: dict, id_col: str, rank: int, strategy: str) -> dict:
+    pred_ehull = float(row.get("q50", row.get("pred_ehull", 0.0)))
+    std = float(row.get("epistemic_std", 0.1))
+    p_stable = float(row.get("p_stable", 0.5))
+    unc = classify_uncertainty(std)
+    action = get_action(p_stable, unc, pred_ehull)
+    score = float(row.get("acquisition_score", 0.0))
+
+    if score >= 0.75 and action == "DFT":
+        priority = "priority"
+    elif score >= 0.55 and action != "SKIP":
+        priority = "high"
+    elif action != "SKIP":
+        priority = "medium"
+    else:
+        priority = "low"
+
+    return {
+        "material_id": str(row.get(id_col, "")),
+        "formula": str(row.get("formula", "")),
+        "pred_ehull": round(pred_ehull, 4),
+        "p_stable": round(p_stable, 3),
+        "uncertainty": unc,
+        "action": action,
+        "confidence_interval": (
+            round(float(row.get("q10", pred_ehull - 2 * std)), 4),
+            round(float(row.get("q90", pred_ehull + 2 * std)), 4),
+        ),
+        "rank": rank,
+        "ranking_strategy": strategy,
+        "acquisition_score": round(score, 4),
+        "screen_priority": priority,
+        "score_breakdown": {
+            "stability": round(float(row.get("acq_stability", 0.0)), 4),
+            "p_stable": round(float(row.get("acq_p_stable", 0.0)), 4),
+            "uncertainty": round(float(row.get("acq_uncertainty", 0.0)), 4),
+            "novelty": round(float(row.get("acq_novelty", 0.0)), 4),
+            "confidence": round(float(row.get("acq_confidence", 0.0)), 4),
+            "ood_penalty": round(float(row.get("acq_ood_penalty", 0.0)), 4),
+        },
+    }
+
+
+def _rank_and_format_candidates(pool_df, id_col: str, strategy: str, offset: int = 0):
+    ranked_df = rank_candidates(pool_df, id_col=id_col, strategy=strategy)
+    candidates = [
+        _format_ranked_candidate(row.to_dict(), id_col=id_col, rank=offset + idx + 1, strategy=strategy)
+        for idx, (_, row) in enumerate(ranked_df.iterrows())
+    ]
+    return ranked_df, candidates
+
+
+_DISCOVERY_JOB_STORE = DiscoveryJobStore()
+_DISCOVERY_JOB_TASKS: dict[str, asyncio.Task] = {}
+
+
+def _active_discovery_job(campaign_name: str):
+    for job in reversed(_DISCOVERY_JOB_STORE.list_for_campaign(campaign_name)):
+        if job.status in {"queued", "running"}:
+            return job
+    return None
+
+
+def _select_ranked_candidates(
+    ranked_candidates: list[dict],
+    batch_size: int,
+    include_hold: bool,
+    min_score: Optional[float],
+) -> tuple[list[dict], list[str]]:
+    allowed_actions = {"DFT"}
+    if include_hold:
+        allowed_actions.add("HOLD")
+    filtered = [c for c in ranked_candidates if c["action"] in allowed_actions]
+    if min_score is not None:
+        filtered = [c for c in filtered if float(c["acquisition_score"]) >= float(min_score)]
+    selected = filtered[: batch_size]
+    selected_ids = [c["material_id"] for c in selected]
+    return selected, selected_ids
+
+
+def _mock_retrain_artifact(state: CampaignState, cycle: int, dft_results: dict[str, float]) -> str:
+    artifact_dir = REPO_ROOT / "data" / "campaign_artifacts" / state.campaign_name / f"cycle_{cycle:03d}"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "campaign_name": state.campaign_name,
+        "cycle": cycle,
+        "generated_at": utc_now_iso(),
+        "retrain_mode": "mock",
+        "dft_results_count": len(dft_results),
+        "stable_count": sum(1 for v in dft_results.values() if v < 0.05),
+        "mean_ehull": (sum(dft_results.values()) / len(dft_results)) if dft_results else None,
+    }
+    out = artifact_dir / "mock_model_artifact.json"
+    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return out.as_posix()
+
+
+async def _run_discovery_job(job_id: str, campaign_name: str, cycle: int, mode: str) -> None:
+    try:
+        _DISCOVERY_JOB_STORE.update(
+            job_id,
+            status="running",
+            stage="wait_dft",
+            started_at=utc_now_iso(),
+        )
+
+        path = _campaign_path(campaign_name)
+        if not path.exists():
+            raise RuntimeError(f"Campaign '{campaign_name}' no longer exists")
+        state = CampaignState.load(path)
+        if cycle != state.current_cycle:
+            raise RuntimeError(
+                f"Campaign cycle advanced before job start (job cycle={cycle}, current={state.current_cycle})"
+            )
+
+        selected_ids = list(state.current_cycle_record.candidates_selected)
+        if not selected_ids:
+            raise RuntimeError("No selected candidates for DFT submission")
+
+        # Simulated asynchronous DFT runtime (can be replaced with external runner mode).
+        await asyncio.sleep(min(15.0, max(2.0, 0.15 * len(selected_ids))))
+
+        parquet_path = Path("data/predictions") / f"{state.pool_source}.parquet"
+        df, id_col = await _load_predictions_pool_df(parquet_path)
+        selected_df = df[df[id_col].astype(str).isin(set(selected_ids))].copy()
+
+        dft_results = await asyncio.to_thread(simulate_dft_outcomes, selected_df, id_col=id_col)
+        dft_summary = summarize_outcomes(dft_results)
+
+        state = CampaignState.load(path)
+        if cycle != state.current_cycle:
+            raise RuntimeError(
+                f"Campaign cycle changed during job execution (job cycle={cycle}, current={state.current_cycle})"
+            )
+
+        state.advance("ingest")
+        rec = state.current_cycle_record
+        rec.dft_results = dft_results
+        rec.n_stable_found = int(dft_summary["stable_count"])
+        rec.metrics["dft_mode"] = mode
+        rec.metrics["dft_job_started_at"] = _DISCOVERY_JOB_STORE.get(job_id).started_at
+        rec.metrics["dft_job_completed_at"] = utc_now_iso()
+        rec.metrics["dft_summary"] = dft_summary
+        state.record_dft_results(dft_results)
+        state.save(path)
+
+        _DISCOVERY_JOB_STORE.update(
+            job_id,
+            stage="ingest",
+            processed_count=len(dft_results),
+            stable_found=int(dft_summary["stable_count"]),
+            metrics={"dft_summary": dft_summary},
+        )
+
+        state = CampaignState.load(path)
+        if cycle != state.current_cycle:
+            raise RuntimeError(
+                f"Campaign cycle changed before retrain stage (job cycle={cycle}, current={state.current_cycle})"
+            )
+        state.advance("retrain")
+        state.save(path)
+
+        # Lightweight retrain artifact for async loop continuity.
+        artifact_path = await asyncio.to_thread(_mock_retrain_artifact, state, cycle, dft_results)
+
+        state = CampaignState.load(path)
+        if cycle != state.current_cycle:
+            raise RuntimeError(
+                f"Campaign cycle changed before report stage (job cycle={cycle}, current={state.current_cycle})"
+            )
+        rec = state.current_cycle_record
+        rec.model_artifact_path = artifact_path
+        rec.metrics["model_validation_passed"] = True
+        rec.metrics["job_id"] = job_id
+        rec.metrics["job_status"] = "completed"
+        rec.metrics["report_generated_at"] = utc_now_iso()
+        state.current_model_artifacts = artifact_path
+        state.advance("report")
+        state.save(path)
+
+        state = CampaignState.load(path)
+        if cycle != state.current_cycle:
+            raise RuntimeError(
+                f"Campaign cycle changed before cycle advance (job cycle={cycle}, current={state.current_cycle})"
+            )
+        state.advance_cycle()
+        state.save(path)
+
+        _DISCOVERY_JOB_STORE.update(
+            job_id,
+            status="completed",
+            stage="completed",
+            completed_at=utc_now_iso(),
+            processed_count=len(dft_results),
+            stable_found=int(dft_summary["stable_count"]),
+            metrics={
+                "dft_summary": dft_summary,
+                "artifact_path": artifact_path,
+            },
+        )
+    except Exception as exc:
+        path = _campaign_path(campaign_name)
+        if path.exists():
+            try:
+                state = CampaignState.load(path)
+                if cycle == state.current_cycle:
+                    rec = state.current_cycle_record
+                    rec.metrics["job_id"] = job_id
+                    rec.metrics["job_status"] = "failed"
+                    rec.metrics["job_error"] = str(exc)
+                    state.save(path)
+            except Exception:
+                pass
+        _DISCOVERY_JOB_STORE.update(
+            job_id,
+            status="failed",
+            stage="failed",
+            completed_at=utc_now_iso(),
+            error=str(exc),
+        )
+    finally:
+        _DISCOVERY_JOB_TASKS.pop(job_id, None)
+
+
 @app.get("/discovery/campaigns")
 async def list_discovery_campaigns(api_key: str = Security(get_api_key)):
     """List all discovery campaigns."""
@@ -1222,6 +1501,7 @@ async def list_discovery_campaigns(api_key: str = Security(get_api_key)):
 class CreateCampaignBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     pool_source: str = Field(default="ensemble_soap_loco_test")
+    ranking_strategy: str = Field(default=DEFAULT_RANKING_STRATEGY)
 
 
 @app.post("/discovery/campaigns")
@@ -1235,6 +1515,10 @@ async def create_discovery_campaign(
             status_code=400,
             detail="Campaign name must be alphanumeric, hyphens, or underscores (1-64 chars)",
         )
+    try:
+        ranking_strategy = validate_ranking_strategy(body.ranking_strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if _campaign_path(body.name).exists():
         raise HTTPException(status_code=409, detail=f"Campaign '{body.name}' already exists")
@@ -1250,6 +1534,8 @@ async def create_discovery_campaign(
         raise HTTPException(status_code=400, detail="Pool is empty")
 
     state = CampaignState.new(body.name, pool_ids)
+    state.pool_source = body.pool_source
+    state.ranking_strategy = ranking_strategy
     state.save(_campaign_path(body.name))
 
     return {"success": True, "campaign": state.summary()}
@@ -1263,6 +1549,7 @@ async def get_discovery_campaign(name: str, api_key: str = Security(get_api_key)
         raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
 
     state = CampaignState.load(path)
+    active_job = _active_discovery_job(name)
 
     return {
         "success": True,
@@ -1282,13 +1569,45 @@ async def get_discovery_campaign(name: str, api_key: str = Security(get_api_key)
                 for c in state.cycles
             ],
             "stages": list(STAGES),
+            "active_job": active_job.to_dict() if active_job is not None else None,
         },
+    }
+
+
+@app.get("/discovery/strategies")
+async def get_discovery_strategies(api_key: str = Security(get_api_key)):
+    return {
+        "success": True,
+        "default": DEFAULT_RANKING_STRATEGY,
+        "strategies": [
+            {
+                "id": "balanced",
+                "label": "Balanced",
+                "description": "Mixes stability, confidence, and moderate exploration.",
+            },
+            {
+                "id": "exploit",
+                "label": "Exploit",
+                "description": "Prioritize highest-likelihood stable candidates for immediate DFT.",
+            },
+            {
+                "id": "explore",
+                "label": "Explore",
+                "description": "Prioritize uncertainty and novelty to discover new regions.",
+            },
+            {
+                "id": "risk_averse",
+                "label": "Risk Averse",
+                "description": "Prioritize conservative candidates and penalize OOD risk.",
+            },
+        ],
     }
 
 
 @app.post("/discovery/campaigns/{name}/screen")
 async def screen_discovery_candidates(
     name: str,
+    strategy: Optional[str] = None,
     api_key: str = Security(get_api_key),
 ):
     """Run ML screening on the remaining candidate pool for the current cycle."""
@@ -1307,7 +1626,8 @@ async def screen_discovery_candidates(
     if not state.pool_remaining_ids:
         raise HTTPException(status_code=400, detail="No remaining candidates in pool")
 
-    df, id_col = await _load_predictions_pool_df()
+    parquet_path = Path("data/predictions") / f"{state.pool_source}.parquet"
+    df, id_col = await _load_predictions_pool_df(parquet_path)
 
     remaining_set = set(state.pool_remaining_ids)
     pool_df = df[df[id_col].isin(remaining_set)].copy()
@@ -1315,36 +1635,15 @@ async def screen_discovery_candidates(
     if pool_df.empty:
         raise HTTPException(status_code=400, detail="No matching candidates found in predictions")
 
-    sort_col = "q50" if "q50" in pool_df.columns else "pred_ehull"
-    pool_df = pool_df.sort_values(sort_col, ascending=True)
-
-    candidates = []
-    for rank, (_, row) in enumerate(pool_df.iterrows(), start=1):
-        pred_ehull = float(row.get("q50", row.get("pred_ehull", 0)))
-        std = float(row.get("epistemic_std", 0.1))
-        p_stable = float(row.get("p_stable", 0.5))
-
-        unc = classify_uncertainty(std)
-        action = get_action(p_stable, unc, pred_ehull)
-
-        candidates.append({
-            "material_id": str(row[id_col]),
-            "formula": str(row.get("formula", "")),
-            "pred_ehull": round(pred_ehull, 4),
-            "p_stable": round(p_stable, 3),
-            "uncertainty": unc,
-            "action": action,
-            "confidence_interval": (
-                round(float(row.get("q10", pred_ehull - 2 * std)), 4),
-                round(float(row.get("q90", pred_ehull + 2 * std)), 4),
-            ),
-            "rank": rank,
-        })
+    active_strategy = _resolve_ranking_strategy(state, strategy)
+    _, candidates = _rank_and_format_candidates(pool_df, id_col=id_col, strategy=active_strategy)
 
     # Advance campaign state
     rec = state.current_cycle_record
     rec.metrics["candidates_scored"] = len(candidates)
     rec.metrics["pool_remaining_at_screen"] = len(remaining_set)
+    rec.metrics["ranking_strategy"] = active_strategy
+    state.ranking_strategy = active_strategy
     state.advance("select")
     state.save(path)
 
@@ -1353,8 +1652,253 @@ async def screen_discovery_candidates(
         "campaign_name": name,
         "cycle": state.current_cycle,
         "candidates_screened": len(candidates),
+        "ranking_strategy": active_strategy,
         "candidates": candidates,
     }
+
+
+class SelectCandidatesBody(BaseModel):
+    batch_size: int = Field(default=20, ge=1, le=200)
+    strategy: Optional[str] = Field(default=None)
+    include_hold: bool = Field(default=True)
+    min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    commit: bool = Field(default=True)
+
+
+@app.post("/discovery/campaigns/{name}/select")
+async def select_discovery_batch(
+    name: str,
+    body: SelectCandidatesBody,
+    api_key: str = Security(get_api_key),
+):
+    """Select a top-ranked candidate batch for DFT follow-up."""
+    path = _campaign_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
+
+    state = CampaignState.load(path)
+    if state.current_stage not in {"screen", "select"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Campaign is at stage '{state.current_stage}', not 'screen' or 'select'",
+        )
+
+    parquet_path = Path("data/predictions") / f"{state.pool_source}.parquet"
+    df, id_col = await _load_predictions_pool_df(parquet_path)
+    remaining_set = set(state.pool_remaining_ids)
+    pool_df = df[df[id_col].isin(remaining_set)].copy()
+    if pool_df.empty:
+        raise HTTPException(status_code=400, detail="No remaining candidates in pool")
+
+    active_strategy = _resolve_ranking_strategy(state, body.strategy)
+    _, ranked_candidates = _rank_and_format_candidates(pool_df, id_col=id_col, strategy=active_strategy)
+
+    allowed_actions = {"DFT"}
+    if body.include_hold:
+        allowed_actions.add("HOLD")
+
+    filtered = [c for c in ranked_candidates if c["action"] in allowed_actions]
+    if body.min_score is not None:
+        filtered = [c for c in filtered if float(c["acquisition_score"]) >= float(body.min_score)]
+
+    selected = filtered[: body.batch_size]
+    selected_ids = [c["material_id"] for c in selected]
+
+    if body.commit:
+        rec = state.current_cycle_record
+        rec.candidates_selected = selected_ids
+        rec.metrics["selection_strategy"] = active_strategy
+        rec.metrics["selected_batch_size"] = len(selected_ids)
+        rec.metrics["selection_include_hold"] = body.include_hold
+        rec.metrics["selection_min_score"] = body.min_score
+        state.ranking_strategy = active_strategy
+        state.advance("submit_dft")
+        state.save(path)
+
+    return {
+        "success": True,
+        "campaign_name": name,
+        "cycle": state.current_cycle,
+        "stage": state.current_stage,
+        "committed": body.commit,
+        "ranking_strategy": active_strategy,
+        "requested_batch_size": body.batch_size,
+        "selected_count": len(selected),
+        "selected_ids": selected_ids,
+        "candidates": selected,
+    }
+
+
+class SubmitDFTBody(BaseModel):
+    mode: str = Field(default="mock")
+
+
+@app.post("/discovery/campaigns/{name}/submit-dft")
+async def submit_discovery_dft(
+    name: str,
+    body: SubmitDFTBody,
+    api_key: str = Security(get_api_key),
+):
+    """Submit selected candidates for async DFT execution."""
+    path = _campaign_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
+
+    state = CampaignState.load(path)
+    if state.current_stage != "submit_dft":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Campaign is at stage '{state.current_stage}', not 'submit_dft'",
+        )
+
+    active = _active_discovery_job(name)
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Campaign already has an active job: {active.job_id}",
+        )
+
+    selected_ids = list(state.current_cycle_record.candidates_selected)
+    if not selected_ids:
+        raise HTTPException(status_code=400, detail="No selected candidates to submit for DFT")
+
+    mode = (body.mode or "mock").strip().lower()
+    if mode != "mock":
+        raise HTTPException(
+            status_code=400,
+            detail="Only mode='mock' is currently available in API runtime",
+        )
+
+    job = _DISCOVERY_JOB_STORE.create(
+        campaign_name=name,
+        cycle=state.current_cycle,
+        mode=mode,
+        selected_count=len(selected_ids),
+    )
+
+    rec = state.current_cycle_record
+    rec.dft_job_id = job.job_id
+    rec.metrics["dft_submission_mode"] = mode
+    rec.metrics["dft_submission_selected"] = len(selected_ids)
+    rec.metrics["dft_submission_at"] = utc_now_iso()
+    state.advance("wait_dft")
+    state.save(path)
+
+    task = asyncio.create_task(_run_discovery_job(job.job_id, name, state.current_cycle, mode))
+    _DISCOVERY_JOB_TASKS[job.job_id] = task
+
+    return {
+        "success": True,
+        "campaign_name": name,
+        "cycle": state.current_cycle,
+        "stage": state.current_stage,
+        "job": job.to_dict(),
+    }
+
+
+class RunCycleBody(BaseModel):
+    batch_size: int = Field(default=20, ge=1, le=200)
+    strategy: Optional[str] = Field(default=None)
+    include_hold: bool = Field(default=True)
+    min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    mode: str = Field(default="mock")
+
+
+@app.post("/discovery/campaigns/{name}/run-cycle")
+async def run_discovery_cycle(
+    name: str,
+    body: RunCycleBody,
+    api_key: str = Security(get_api_key),
+):
+    """
+    Run an end-to-end async cycle:
+    screen/select -> submit_dft -> wait_dft -> ingest -> retrain -> report -> next cycle.
+    """
+    path = _campaign_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
+
+    state = CampaignState.load(path)
+    if state.current_stage not in {"screen", "select", "submit_dft", "wait_dft"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Campaign stage '{state.current_stage}' cannot run auto-cycle",
+        )
+
+    active = _active_discovery_job(name)
+    if active is not None:
+        return {
+            "success": True,
+            "campaign_name": name,
+            "cycle": state.current_cycle,
+            "stage": state.current_stage,
+            "message": "Active job already running",
+            "job": active.to_dict(),
+        }
+
+    if state.current_stage in {"screen", "select"}:
+        parquet_path = Path("data/predictions") / f"{state.pool_source}.parquet"
+        df, id_col = await _load_predictions_pool_df(parquet_path)
+        remaining_set = set(state.pool_remaining_ids)
+        pool_df = df[df[id_col].isin(remaining_set)].copy()
+        if pool_df.empty:
+            raise HTTPException(status_code=400, detail="No remaining candidates in pool")
+
+        active_strategy = _resolve_ranking_strategy(state, body.strategy)
+        _, ranked_candidates = _rank_and_format_candidates(pool_df, id_col=id_col, strategy=active_strategy)
+        selected, selected_ids = _select_ranked_candidates(
+            ranked_candidates=ranked_candidates,
+            batch_size=body.batch_size,
+            include_hold=body.include_hold,
+            min_score=body.min_score,
+        )
+        if not selected_ids:
+            raise HTTPException(status_code=400, detail="No candidates matched auto-cycle selection criteria")
+
+        rec = state.current_cycle_record
+        rec.metrics["candidates_scored"] = len(ranked_candidates)
+        rec.metrics["selection_strategy"] = active_strategy
+        rec.metrics["selected_batch_size"] = len(selected_ids)
+        rec.metrics["selection_include_hold"] = body.include_hold
+        rec.metrics["selection_min_score"] = body.min_score
+        rec.candidates_selected = selected_ids
+        state.ranking_strategy = active_strategy
+        state.advance("submit_dft")
+        state.save(path)
+    else:
+        selected_ids = list(state.current_cycle_record.candidates_selected)
+        if not selected_ids:
+            raise HTTPException(status_code=400, detail="Campaign is in submit/wait stage but no selected candidates exist")
+
+    submit_body = SubmitDFTBody(mode=body.mode)
+    submit_resp = await submit_discovery_dft(name=name, body=submit_body, api_key=api_key)
+    submit_resp["auto_cycle"] = True
+    return submit_resp
+
+
+@app.get("/discovery/campaigns/{name}/jobs")
+async def get_discovery_campaign_jobs(
+    name: str,
+    api_key: str = Security(get_api_key),
+):
+    path = _campaign_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Campaign '{name}' not found")
+    jobs = [job.to_dict() for job in _DISCOVERY_JOB_STORE.list_for_campaign(name)]
+    return {
+        "success": True,
+        "campaign_name": name,
+        "jobs": jobs,
+        "active_job": next((j for j in reversed(jobs) if j["status"] in {"queued", "running"}), None),
+    }
+
+
+@app.get("/discovery/jobs/{job_id}")
+async def get_discovery_job(job_id: str, api_key: str = Security(get_api_key)):
+    job = _DISCOVERY_JOB_STORE.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Discovery job '{job_id}' not found")
+    return {"success": True, "job": job.to_dict()}
 
 
 @app.get("/discovery/campaigns/{name}/candidates")
@@ -1362,6 +1906,7 @@ async def get_discovery_candidates(
     name: str,
     limit: int = 50,
     offset: int = 0,
+    strategy: Optional[str] = None,
     api_key: str = Security(get_api_key),
 ):
     """Get paginated ranked candidates for a campaign."""
@@ -1371,44 +1916,29 @@ async def get_discovery_candidates(
 
     state = CampaignState.load(path)
 
-    df, id_col = await _load_predictions_pool_df()
+    parquet_path = Path("data/predictions") / f"{state.pool_source}.parquet"
+    df, id_col = await _load_predictions_pool_df(parquet_path)
 
     remaining_set = set(state.pool_remaining_ids)
     pool_df = df[df[id_col].isin(remaining_set)].copy()
 
-    sort_col = "q50" if "q50" in pool_df.columns else "pred_ehull"
-    pool_df = pool_df.sort_values(sort_col, ascending=True)
+    active_strategy = _resolve_ranking_strategy(state, strategy)
+    ranked_df, _ = _rank_and_format_candidates(pool_df, id_col=id_col, strategy=active_strategy)
 
-    total = len(pool_df)
-    page_df = pool_df.iloc[offset: offset + limit]
+    total = len(ranked_df)
+    page_df = ranked_df.iloc[offset: offset + limit]
 
-    candidates = []
-    for rank, (_, row) in enumerate(page_df.iterrows(), start=offset + 1):
-        pred_ehull = float(row.get("q50", row.get("pred_ehull", 0)))
-        std = float(row.get("epistemic_std", 0.1))
-        p_stable = float(row.get("p_stable", 0.5))
-        unc = classify_uncertainty(std)
-        action = get_action(p_stable, unc, pred_ehull)
-
-        candidates.append({
-            "material_id": str(row[id_col]),
-            "formula": str(row.get("formula", "")),
-            "pred_ehull": round(pred_ehull, 4),
-            "p_stable": round(p_stable, 3),
-            "uncertainty": unc,
-            "action": action,
-            "confidence_interval": (
-                round(float(row.get("q10", pred_ehull - 2 * std)), 4),
-                round(float(row.get("q90", pred_ehull + 2 * std)), 4),
-            ),
-            "rank": rank,
-        })
+    candidates = [
+        _format_ranked_candidate(row.to_dict(), id_col=id_col, rank=offset + idx + 1, strategy=active_strategy)
+        for idx, (_, row) in enumerate(page_df.iterrows())
+    ]
 
     return {
         "success": True,
         "campaign_name": name,
         "cycle": state.current_cycle,
         "stage": state.current_stage,
+        "ranking_strategy": active_strategy,
         "total": total,
         "offset": offset,
         "limit": limit,

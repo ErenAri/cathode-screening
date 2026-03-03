@@ -543,7 +543,7 @@ export default function Database() {
             <footer className="border-t border-gray-200 mt-16">
                 <div className="max-w-6xl mx-auto px-6 py-6">
                     <div className="flex justify-between text-sm text-gray-500 mb-3">
-                        <p>CathodeScreen - Enterprise Platform</p>
+                        <p>CathodeScreen - Battery Discovery Platform</p>
                         <div className="flex gap-4">
                             <a href="https://github.com/ErenAri" target="_blank" className="hover:text-gray-900">GitHub</a>
                             <a href={`${API_BASE_URL}/docs`} target="_blank" className="hover:text-gray-900">API</a>

@@ -31,7 +31,7 @@ export default function Home() {
       {/* Hero Section */}
       <section className="pt-32 pb-20 px-6 max-w-6xl mx-auto text-center">
         <div className="inline-block px-4 py-1.5 bg-blue-50 text-blue-700 rounded-full text-sm font-medium mb-6">
-          Enterprise AI Screening
+          AI Cathode Screening
         </div>
         <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-6 text-gray-900">
           Accelerate Battery Material <br />
@@ -150,7 +150,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="bg-gray-50 border-t border-gray-200 py-12 mt-20">
         <div className="max-w-7xl mx-auto px-6 text-center">
-          <p className="text-gray-500 mb-4">CathodeScreen · Enterprise Platform · 2026</p>
+          <p className="text-gray-500 mb-4">CathodeScreen - Battery Discovery Platform - 2026</p>
           <div className="flex justify-center mb-6">
             <SocialLinks />
           </div>

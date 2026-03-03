@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CathodeScreen | Enterprise Material Discovery",
+  title: "CathodeScreen | Battery Material Discovery",
   description: "AI-powered platform for predicting cathode material stability using machine learning",
 };
 

@@ -8,7 +8,7 @@
 ![Render](https://img.shields.io/badge/Render-Deployed-46E3B7?style=flat&logo=render)
 ![Vercel](https://img.shields.io/badge/Vercel-Deployed-black?style=flat&logo=vercel)
 
-**CathodeScreen** is an enterprise-grade machine learning framework designed to accelerate the discovery of thermodynamically stable lithium-ion battery cathode materials. It implements a scalable inference pipeline utilizing a deep ensemble of **MACE-MP-0** fine-tuned models (with CHGNet and CGCNN fallbacks) to robustly predict energy above hull ($E_{hull}$) with quantified epistemic and aleatoric uncertainty, conformal calibration, and automated governance.
+**CathodeScreen** is a machine learning framework designed to accelerate the discovery of thermodynamically stable lithium-ion battery cathode materials. It implements a scalable inference pipeline utilizing a deep ensemble of **MACE-MP-0** fine-tuned models (with CHGNet and CGCNN fallbacks) to robustly predict energy above hull ($E_{hull}$) with quantified epistemic and aleatoric uncertainty, conformal calibration, and automated governance.
 
 
 ## Table of Contents
@@ -24,7 +24,7 @@
 
 ## Abstract
 
-The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. The production model is a **5-member MACE-MP-0 fine-tuned ensemble** with conformal calibration, achieving **Test MAE: 0.030 eV**, **Spearman: 0.663**, **90% prediction interval coverage**, and **92.7% KEEP precision** with **0% false-kill rate**. The system passes all 6 automated governance checks (ranking, calibration, precision, false-kill, decision-making) and is approved for production use.
+The discovery of novel cathode materials is constrained by the computationally expensive nature of Density Functional Theory (DFT) calculations, which scale as $O(N^3)$. **CathodeScreen** implements a data-driven screening funnel that serves as a pre-filter for DFT. The primary model is a **5-member MACE-MP-0 fine-tuned ensemble** with conformal calibration, achieving **Test MAE: 0.030 eV**, **Spearman: 0.663**, **90% prediction interval coverage**, and **92.7% KEEP precision** with **0% false-kill rate**. The system passes all 6 automated governance checks (ranking, calibration, precision, false-kill, decision-making).
 
 ## Problem Statement
 
@@ -253,8 +253,6 @@ For production deployments:
 - Evaluate prediction quality with `scripts/09_evaluate_predictions.py`.
 - Track drift with `scripts/10_compute_drift.py` (outputs `retrain_recommended` when PSI exceeds threshold).
 - Gate releases with `scripts/12_validate_release.py` and publish to a registry using `scripts/13_publish_registry.py`.
-
-See `docs/production_checklist.md` for a full production readiness checklist.
 
 ### Load Testing
 

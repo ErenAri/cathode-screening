@@ -13,7 +13,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,8 @@ class CampaignState:
 
     campaign_name: str
     created_at: str
+    pool_source: str = "ensemble_soap_loco_test"
+    ranking_strategy: str = "balanced"
     total_dft_queries: int = 0
     cycles: List[CycleRecord] = field(default_factory=list)
     pool_labeled_ids: List[str] = field(default_factory=list)
@@ -140,11 +142,12 @@ class CampaignState:
         path = Path(path)
         data = json.loads(path.read_text(encoding="utf-8"))
         cycles = [CycleRecord(**c) for c in data.pop("cycles", [])]
-        state = cls(**data, cycles=cycles) if "cycles" not in data else cls(**{**data, "cycles": cycles})
         # Reconcile: rebuild from raw dict to handle both cases cleanly
         state_obj = cls(
             campaign_name=data["campaign_name"],
             created_at=data["created_at"],
+            pool_source=data.get("pool_source", "ensemble_soap_loco_test"),
+            ranking_strategy=data.get("ranking_strategy", "balanced"),
             total_dft_queries=data.get("total_dft_queries", 0),
             cycles=cycles,
             pool_labeled_ids=data.get("pool_labeled_ids", []),
@@ -169,6 +172,8 @@ class CampaignState:
         total_stable = sum(c.n_stable_found for c in self.cycles)
         return {
             "campaign_name": self.campaign_name,
+            "pool_source": self.pool_source,
+            "ranking_strategy": self.ranking_strategy,
             "current_cycle": self.current_cycle,
             "current_stage": self.current_stage,
             "completed_cycles": len(completed),

@@ -303,7 +303,7 @@ export default function About() {
                 <div className="max-w-5xl mx-auto px-6 py-8">
                     <div className="flex flex-col md:flex-row justify-between items-center mb-4">
                         <p className="text-sm text-gray-500 mb-4 md:mb-0">
-                            CathodeScreen v1-Li-Cathode · Enterprise Material Discovery Platform
+                            CathodeScreen v1-Li-Cathode - Battery Discovery Platform
                         </p>
                         <SocialLinks />
                     </div>

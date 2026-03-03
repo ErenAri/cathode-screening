@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import API_BASE_URL, { API_KEY } from "@/config";
 import { SocialLinks } from "@/components/SocialLinks";
@@ -9,6 +9,8 @@ import { SocialLinks } from "@/components/SocialLinks";
 
 interface CampaignSummary {
     campaign_name: string;
+    pool_source: string;
+    ranking_strategy: string;
     current_cycle: number;
     current_stage: string;
     completed_cycles: number;
@@ -28,10 +30,28 @@ interface CycleRecord {
     metrics: Record<string, number>;
 }
 
+interface DiscoveryJob {
+    job_id: string;
+    campaign_name: string;
+    cycle: number;
+    mode: string;
+    status: string;
+    stage: string;
+    created_at: string;
+    started_at: string | null;
+    completed_at: string | null;
+    error: string | null;
+    selected_count: number;
+    processed_count: number;
+    stable_found: number;
+    metrics: Record<string, unknown>;
+}
+
 interface CampaignDetail extends CampaignSummary {
     created_at: string;
     cycles: CycleRecord[];
     stages: string[];
+    active_job?: DiscoveryJob | null;
 }
 
 interface CandidateRow {
@@ -43,6 +63,9 @@ interface CandidateRow {
     action: string;
     confidence_interval: [number, number];
     rank: number;
+    ranking_strategy: string;
+    acquisition_score: number;
+    screen_priority: string;
 }
 
 // --- Helpers ---
@@ -56,6 +79,15 @@ const STAGE_LABELS: Record<string, string> = {
     retrain: "Retrain",
     report: "Report",
 };
+
+const JOB_STAGE_ORDER = ["submit_dft", "wait_dft", "ingest", "retrain", "report", "completed"] as const;
+
+const RANKING_OPTIONS = [
+    { id: "balanced", label: "Balanced" },
+    { id: "exploit", label: "Exploit" },
+    { id: "explore", label: "Explore" },
+    { id: "risk_averse", label: "Risk Averse" },
+];
 
 function formatDate(iso: string): string {
     try {
@@ -90,9 +122,13 @@ export default function DiscoveryPage() {
     const [candidatesPage, setCandidatesPage] = useState(0);
     const [search, setSearch] = useState("");
     const perPage = 50;
+    const [rankingStrategy, setRankingStrategy] = useState("balanced");
+    const [batchSize, setBatchSize] = useState(20);
 
     // Screen action
     const [screening, setScreening] = useState(false);
+    const [selectingBatch, setSelectingBatch] = useState(false);
+    const [autoRunning, setAutoRunning] = useState(false);
 
     // Create campaign
     const [showCreate, setShowCreate] = useState(false);
@@ -106,8 +142,9 @@ export default function DiscoveryPage() {
     }, []);
 
     // --- Fetch campaigns ---
-    const fetchCampaigns = () => {
+    const refreshCampaigns = () => {
         setLoading(true);
+        setError(null);
         fetch(`${API_BASE_URL}/discovery/campaigns`, { headers })
             .then((res) => res.json())
             .then((result) => {
@@ -122,17 +159,32 @@ export default function DiscoveryPage() {
     };
 
     useEffect(() => {
-        fetchCampaigns();
+        fetch(`${API_BASE_URL}/discovery/campaigns`, { headers })
+            .then((res) => res.json())
+            .then((result) => {
+                if (result.success) setCampaigns(result.campaigns);
+                else setError(result.error || "Failed to load campaigns");
+                setLoading(false);
+            })
+            .catch(() => {
+                setError("Failed to connect to server");
+                setLoading(false);
+            });
     }, [headers]);
 
     // --- Fetch campaign detail ---
-    const fetchDetail = (name: string) => {
+    const fetchDetail = useCallback((name: string) => {
         setDetailLoading(true);
         setDetailError(null);
         fetch(`${API_BASE_URL}/discovery/campaigns/${name}`, { headers })
             .then((res) => res.json())
             .then((result) => {
-                if (result.success) setDetail(result.campaign);
+                if (result.success) {
+                    setDetail(result.campaign);
+                    if (result.campaign?.ranking_strategy) {
+                        setRankingStrategy(result.campaign.ranking_strategy);
+                    }
+                }
                 else setDetailError(result.error || "Failed to load campaign");
                 setDetailLoading(false);
             })
@@ -140,13 +192,13 @@ export default function DiscoveryPage() {
                 setDetailError("Failed to connect to server");
                 setDetailLoading(false);
             });
-    };
+    }, [headers]);
 
     // --- Fetch candidates ---
-    const fetchCandidates = (name: string, offset: number) => {
+    const fetchCandidates = (name: string, offset: number, strategy: string) => {
         setCandidatesLoading(true);
         fetch(
-            `${API_BASE_URL}/discovery/campaigns/${name}/candidates?limit=${perPage}&offset=${offset}`,
+            `${API_BASE_URL}/discovery/campaigns/${name}/candidates?limit=${perPage}&offset=${offset}&strategy=${encodeURIComponent(strategy)}`,
             { headers }
         )
             .then((res) => res.json())
@@ -162,19 +214,22 @@ export default function DiscoveryPage() {
 
     // When selecting a campaign
     const selectCampaign = (name: string) => {
+        const summary = campaigns.find((c) => c.campaign_name === name);
+        const initialStrategy = summary?.ranking_strategy || "balanced";
+        setRankingStrategy(initialStrategy);
         setSelected(name);
         setCandidatesPage(0);
         setSearch("");
         fetchDetail(name);
-        fetchCandidates(name, 0);
+        fetchCandidates(name, 0, initialStrategy);
     };
 
-    // Paginate
-    useEffect(() => {
-        if (selected) {
-            fetchCandidates(selected, candidatesPage * perPage);
-        }
-    }, [candidatesPage]);
+    const changeCandidatesPage = (nextPage: number) => {
+        if (!selected) return;
+        const page = Math.max(0, nextPage);
+        setCandidatesPage(page);
+        fetchCandidates(selected, page * perPage, rankingStrategy);
+    };
 
     // --- Create campaign ---
     const handleCreate = () => {
@@ -183,14 +238,14 @@ export default function DiscoveryPage() {
         fetch(`${API_BASE_URL}/discovery/campaigns`, {
             method: "POST",
             headers: { ...headers, "Content-Type": "application/json" },
-            body: JSON.stringify({ name: newName.trim() }),
+            body: JSON.stringify({ name: newName.trim(), ranking_strategy: rankingStrategy }),
         })
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) {
                     setShowCreate(false);
                     setNewName("");
-                    fetchCampaigns();
+                    refreshCampaigns();
                     selectCampaign(result.campaign.campaign_name);
                 } else {
                     alert(result.detail || "Failed to create campaign");
@@ -207,7 +262,7 @@ export default function DiscoveryPage() {
     const handleScreen = () => {
         if (!selected) return;
         setScreening(true);
-        fetch(`${API_BASE_URL}/discovery/campaigns/${selected}/screen`, {
+        fetch(`${API_BASE_URL}/discovery/campaigns/${selected}/screen?strategy=${encodeURIComponent(rankingStrategy)}`, {
             method: "POST",
             headers,
         })
@@ -229,6 +284,66 @@ export default function DiscoveryPage() {
             });
     };
 
+    const handleSelectBatch = () => {
+        if (!selected) return;
+        setSelectingBatch(true);
+        fetch(`${API_BASE_URL}/discovery/campaigns/${selected}/select`, {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({
+                batch_size: batchSize,
+                strategy: rankingStrategy,
+                include_hold: true,
+                commit: true,
+            }),
+        })
+            .then((res) => res.json())
+            .then((result) => {
+                if (result.success) {
+                    alert(`Selected ${result.selected_count} candidates for DFT queue.`);
+                    fetchDetail(selected);
+                    fetchCandidates(selected, 0, rankingStrategy);
+                    setCandidatesPage(0);
+                } else {
+                    alert(result.detail || "Selection failed");
+                }
+                setSelectingBatch(false);
+            })
+            .catch(() => {
+                alert("Failed to connect to server");
+                setSelectingBatch(false);
+            });
+    };
+
+    const handleRunAutoCycle = () => {
+        if (!selected) return;
+        setAutoRunning(true);
+        fetch(`${API_BASE_URL}/discovery/campaigns/${selected}/run-cycle`, {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({
+                batch_size: batchSize,
+                strategy: rankingStrategy,
+                include_hold: true,
+                mode: "mock",
+            }),
+        })
+            .then((res) => res.json())
+            .then((result) => {
+                if (!result.success) {
+                    alert(result.detail || "Auto cycle failed");
+                }
+                fetchDetail(selected);
+                fetchCandidates(selected, 0, rankingStrategy);
+                setCandidatesPage(0);
+                setAutoRunning(false);
+            })
+            .catch(() => {
+                alert("Failed to connect to server");
+                setAutoRunning(false);
+            });
+    };
+
     // --- Filter candidates ---
     const filtered = search
         ? candidates.filter(
@@ -237,6 +352,29 @@ export default function DiscoveryPage() {
                   c.formula.toLowerCase().includes(search.toLowerCase())
           )
         : candidates;
+
+    const activeJob = detail?.active_job ?? null;
+    const hasActiveJob = Boolean(activeJob && ["queued", "running"].includes(activeJob.status));
+    const activeJobId = activeJob?.job_id ?? null;
+    const activeJobStatus = activeJob?.status ?? null;
+    const stageIdx = activeJob ? Math.max(0, JOB_STAGE_ORDER.indexOf(activeJob.stage as (typeof JOB_STAGE_ORDER)[number])) : 0;
+    const jobProgress = activeJob
+        ? activeJob.status === "completed"
+            ? 100
+            : Math.max(
+                  5,
+                  Math.round(((stageIdx + (activeJob.status === "running" ? 0.5 : 0.0)) / JOB_STAGE_ORDER.length) * 100)
+              )
+        : 0;
+
+    useEffect(() => {
+        if (!selected || !activeJobId || !activeJobStatus) return;
+        if (!["queued", "running"].includes(activeJobStatus)) return;
+        const timer = setInterval(() => {
+            fetchDetail(selected);
+        }, 5000);
+        return () => clearInterval(timer);
+    }, [activeJobId, activeJobStatus, fetchDetail, selected]);
 
     return (
         <div className="min-h-screen bg-white font-sans text-gray-900">
@@ -255,7 +393,7 @@ export default function DiscoveryPage() {
                     </nav>
                     <div className="pl-8 border-l border-gray-200">
                         <a href={`${API_BASE_URL}/docs`} target="_blank" className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:scale-125 transition-all duration-200 uppercase tracking-wide flex items-center gap-1">
-                            API <span className="text-[10px]">↗</span>
+                            API <span className="text-[10px]">-&gt;</span>
                         </a>
                     </div>
                 </div>
@@ -272,25 +410,116 @@ export default function DiscoveryPage() {
                     <div>
                         {/* Back button */}
                         <button
-                            onClick={() => { setSelected(null); setDetail(null); fetchCampaigns(); }}
+                            onClick={() => { setSelected(null); setDetail(null); refreshCampaigns(); }}
                             className="text-sm text-blue-600 hover:text-blue-700 mb-6 flex items-center gap-1"
                         >
-                            ← All Campaigns
+                            &lt;- All Campaigns
                         </button>
 
-                        <div className="flex items-center justify-between mb-6">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-900">{detail.campaign_name}</h2>
-                                <p className="text-sm text-gray-500">Created {formatDate(detail.created_at)} · Cycle {detail.current_cycle}</p>
+                                <p className="text-sm text-gray-500">
+                                    Created {formatDate(detail.created_at)} · Cycle {detail.current_cycle} · Strategy {detail.ranking_strategy}
+                                </p>
                             </div>
-                            <button
-                                onClick={handleScreen}
-                                disabled={screening || detail.current_stage !== "screen"}
-                                className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
-                                {screening ? "Screening..." : "Run ML Screening"}
-                            </button>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Strategy</label>
+                                <select
+                                    value={rankingStrategy}
+                                    onChange={(e) => {
+                                        const nextStrategy = e.target.value;
+                                        setRankingStrategy(nextStrategy);
+                                        if (selected) {
+                                            setCandidatesPage(0);
+                                            fetchCandidates(selected, 0, nextStrategy);
+                                        }
+                                    }}
+                                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                                >
+                                    {RANKING_OPTIONS.map((opt) => (
+                                        <option key={opt.id} value={opt.id}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={handleScreen}
+                                    disabled={screening || hasActiveJob || detail.current_stage !== "screen"}
+                                    className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {screening ? "Screening..." : "Run ML Screening"}
+                                </button>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={200}
+                                    value={batchSize}
+                                    onChange={(e) => setBatchSize(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
+                                    className="w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm"
+                                />
+                                <button
+                                    onClick={handleSelectBatch}
+                                    disabled={selectingBatch || hasActiveJob || !["screen", "select"].includes(detail.current_stage)}
+                                    className="px-5 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {selectingBatch ? "Selecting..." : "Select DFT Batch"}
+                                </button>
+                                <button
+                                    onClick={handleRunAutoCycle}
+                                    disabled={autoRunning || hasActiveJob || !["screen", "select", "submit_dft", "wait_dft"].includes(detail.current_stage)}
+                                    className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {autoRunning ? "Running..." : "Run Auto Cycle"}
+                                </button>
+                            </div>
                         </div>
+                        {detailError && (
+                            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                                {detailError}
+                            </div>
+                        )}
+
+                        {activeJob && (
+                            <div className="mb-8 border border-indigo-200 bg-indigo-50 rounded-lg p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold text-indigo-900">
+                                        Active Job: {activeJob.job_id}
+                                    </p>
+                                    <span
+                                        className={`px-2 py-1 rounded text-xs font-semibold uppercase tracking-wide ${
+                                            activeJob.status === "completed"
+                                                ? "bg-green-100 text-green-700"
+                                                : activeJob.status === "failed"
+                                                ? "bg-red-100 text-red-700"
+                                                : "bg-blue-100 text-blue-700"
+                                        }`}
+                                    >
+                                        {activeJob.status}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-indigo-800 mt-1">
+                                    Cycle {activeJob.cycle} · {STAGE_LABELS[activeJob.stage] || activeJob.stage}
+                                </p>
+                                <div className="mt-3 flex items-center justify-between text-xs text-indigo-700">
+                                    <span>
+                                        Processed {activeJob.processed_count}/{activeJob.selected_count}
+                                    </span>
+                                    <span>{jobProgress}%</span>
+                                </div>
+                                <div className="mt-1 h-2 rounded-full bg-indigo-100 overflow-hidden">
+                                    <div
+                                        className="h-full bg-indigo-600 transition-all duration-500 ease-out"
+                                        style={{ width: `${Math.max(4, jobProgress)}%` }}
+                                    />
+                                </div>
+                                {activeJob.error && (
+                                    <p className="mt-3 text-xs text-red-700">
+                                        {activeJob.error}
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
                         {/* Stats cards */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -381,9 +610,11 @@ export default function DiscoveryPage() {
                                                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Rank</th>
                                                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Material ID</th>
                                                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Formula</th>
+                                                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Score</th>
                                                     <th className="px-4 py-3 text-right font-semibold text-gray-700">E<sub>hull</sub> (eV)</th>
                                                     <th className="px-4 py-3 text-right font-semibold text-gray-700">P(Stable)</th>
                                                     <th className="px-4 py-3 text-center font-semibold text-gray-700">Uncertainty</th>
+                                                    <th className="px-4 py-3 text-center font-semibold text-gray-700">Priority</th>
                                                     <th className="px-4 py-3 text-center font-semibold text-gray-700">Action</th>
                                                 </tr>
                                             </thead>
@@ -401,6 +632,7 @@ export default function DiscoveryPage() {
                                                             </a>
                                                         </td>
                                                         <td className="px-4 py-2.5 font-medium">{c.formula}</td>
+                                                        <td className="px-4 py-2.5 text-right font-mono">{c.acquisition_score.toFixed(3)}</td>
                                                         <td className="px-4 py-2.5 text-right font-mono">{c.pred_ehull.toFixed(4)}</td>
                                                         <td className="px-4 py-2.5 text-right font-mono">{(c.p_stable * 100).toFixed(1)}%</td>
                                                         <td className="px-4 py-2.5 text-center">
@@ -414,6 +646,21 @@ export default function DiscoveryPage() {
                                                                 }`}
                                                             >
                                                                 {c.uncertainty}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-center">
+                                                            <span
+                                                                className={`px-2 py-1 rounded text-xs font-medium ${
+                                                                    c.screen_priority === "priority"
+                                                                        ? "bg-emerald-100 text-emerald-700"
+                                                                        : c.screen_priority === "high"
+                                                                        ? "bg-blue-100 text-blue-700"
+                                                                        : c.screen_priority === "medium"
+                                                                        ? "bg-amber-100 text-amber-700"
+                                                                        : "bg-gray-100 text-gray-600"
+                                                                }`}
+                                                            >
+                                                                {c.screen_priority}
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-2.5 text-center">
@@ -439,20 +686,20 @@ export default function DiscoveryPage() {
                                     {candidatesTotal > perPage && (
                                         <div className="flex items-center justify-between mt-4">
                                             <p className="text-sm text-gray-500">
-                                                Showing {candidatesPage * perPage + 1}–
+                                                Showing {candidatesPage * perPage + 1}-
                                                 {Math.min((candidatesPage + 1) * perPage, candidatesTotal)} of{" "}
                                                 {candidatesTotal.toLocaleString()}
                                             </p>
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => setCandidatesPage((p) => Math.max(0, p - 1))}
+                                                    onClick={() => changeCandidatesPage(candidatesPage - 1)}
                                                     disabled={candidatesPage === 0}
                                                     className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
                                                 >
                                                     Previous
                                                 </button>
                                                 <button
-                                                    onClick={() => setCandidatesPage((p) => p + 1)}
+                                                    onClick={() => changeCandidatesPage(candidatesPage + 1)}
                                                     disabled={(candidatesPage + 1) * perPage >= candidatesTotal}
                                                     className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
                                                 >
@@ -492,7 +739,7 @@ export default function DiscoveryPage() {
                                                     </td>
                                                     <td className="px-4 py-2.5 text-gray-500">{formatDate(cycle.started_at)}</td>
                                                     <td className="px-4 py-2.5 text-gray-500">
-                                                        {cycle.completed_at ? formatDate(cycle.completed_at) : "—"}
+                                                        {cycle.completed_at ? formatDate(cycle.completed_at) : "-"}
                                                     </td>
                                                     <td className="px-4 py-2.5 text-right">{cycle.candidates_selected.length}</td>
                                                     <td className="px-4 py-2.5 text-right">{cycle.n_stable_found}</td>
@@ -548,7 +795,7 @@ export default function DiscoveryPage() {
                                 {showCreate && (
                                     <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 mb-6">
                                         <h3 className="text-sm font-semibold text-blue-900 mb-3">Create New Campaign</h3>
-                                        <div className="flex gap-3">
+                                        <div className="flex flex-col md:flex-row gap-3">
                                             <input
                                                 type="text"
                                                 placeholder="Campaign name (e.g. lithium-oxide-v1)"
@@ -557,6 +804,17 @@ export default function DiscoveryPage() {
                                                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                                                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                             />
+                                            <select
+                                                value={rankingStrategy}
+                                                onChange={(e) => setRankingStrategy(e.target.value)}
+                                                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                                            >
+                                                {RANKING_OPTIONS.map((opt) => (
+                                                    <option key={opt.id} value={opt.id}>
+                                                        {opt.label}
+                                                    </option>
+                                                ))}
+                                            </select>
                                             <button
                                                 onClick={handleCreate}
                                                 disabled={creating || !newName.trim()}
@@ -589,6 +847,7 @@ export default function DiscoveryPage() {
                                             <thead className="bg-gray-50 border-b border-gray-200">
                                                 <tr>
                                                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Campaign</th>
+                                                    <th className="px-4 py-3 text-center font-semibold text-gray-700">Strategy</th>
                                                     <th className="px-4 py-3 text-center font-semibold text-gray-700">Cycle</th>
                                                     <th className="px-4 py-3 text-center font-semibold text-gray-700">Stage</th>
                                                     <th className="px-4 py-3 text-right font-semibold text-gray-700">Pool</th>
@@ -604,6 +863,11 @@ export default function DiscoveryPage() {
                                                         className="hover:bg-blue-50 cursor-pointer"
                                                     >
                                                         <td className="px-4 py-3 font-medium text-blue-600">{c.campaign_name}</td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">
+                                                                {c.ranking_strategy}
+                                                            </span>
+                                                        </td>
                                                         <td className="px-4 py-3 text-center">{c.current_cycle}</td>
                                                         <td className="px-4 py-3 text-center">
                                                             <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium">
@@ -632,7 +896,7 @@ export default function DiscoveryPage() {
             {/* Footer */}
             <footer className="bg-gray-50 border-t border-gray-200 py-12">
                 <div className="max-w-7xl mx-auto px-6 text-center">
-                    <p className="text-gray-500 mb-4">CathodeScreen · Enterprise Platform · 2026</p>
+                    <p className="text-gray-500 mb-4">CathodeScreen - Discovery Platform - 2026</p>
                     <div className="flex justify-center mb-6">
                         <SocialLinks />
                     </div>
