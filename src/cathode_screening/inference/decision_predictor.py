@@ -47,33 +47,33 @@ THRESH_METASTABLE = 0.10
 @dataclass
 class DecisionOutput:
     """Complete output from decision predictor."""
-    
+
     # Identifiers
     material_id: str
     formula: str
-    
+
     # Point estimates (eV)
     ehull_pred: float           # Ensemble q50
     ehull_lower: float          # Calibrated q10
     ehull_upper: float          # Calibrated q90
-    
+
     # Uncertainty decomposition
     uncertainty_aleatoric: float  # From interval width (irreducible)
     uncertainty_epistemic: float  # From ensemble disagreement (model uncertainty)
     uncertainty_total: float      # Combined
-    
+
     # OOD assessment
     ood_score: float              # [0, 1], higher = more OOD
     ood_flag: bool                # True if any gate triggered
 
     # Decision
     decision: str                 # KEEP / MAYBE / KILL
-    decision_confidence: float    # [0, 1] based on margin to thresholds        
+    decision_confidence: float    # [0, 1] based on margin to thresholds
     decision_mode: str            # "dft_followup" or "experimental"
-    
+
     # Explanation
     explanation: str = ""         # Human-readable rationale
-    
+
     # Optional probabilities (if available)
     p_stable: Optional[float] = None
     p_metastable: Optional[float] = None
@@ -83,9 +83,12 @@ class DecisionOutput:
 
     # Raw predictions (for debugging)
     q50_per_member: List[float] = field(default_factory=list)
-    
+
+    # Multi-property predictions (analytical, from structure/composition)
+    cathode_properties: Optional[Dict] = None
+
     def to_dict(self) -> Dict:
-        return {
+        result = {
             "material_id": self.material_id,
             "formula": self.formula,
             "ehull_pred": self.ehull_pred,
@@ -104,6 +107,9 @@ class DecisionOutput:
             "p_stable": self.p_stable,
             "p_metastable": self.p_metastable,
         }
+        if self.cathode_properties is not None:
+            result["cathode_properties"] = self.cathode_properties
+        return result
 
 
 def _normalize_path(value: str | Path) -> Path:

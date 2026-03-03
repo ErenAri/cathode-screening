@@ -4,6 +4,23 @@ import { useState } from "react";
 import Link from "next/link";
 import API_BASE_URL, { API_KEY } from "@/config";
 
+interface CathodeProperties {
+    gravimetric_capacity_mAhg: number | null;
+    volumetric_capacity_mAhcm3: number | null;
+    avg_voltage_V: number | null;
+    voltage_confidence: string | null;
+    gravimetric_energy_Whkg: number | null;
+    volumetric_energy_WhL: number | null;
+    li_count: number | null;
+    li_fraction: number | null;
+    n_extractable_li: number | null;
+    density_gcm3: number | null;
+    tm_elements: string[] | null;
+    anion_framework: string | null;
+    composite_score: number | null;
+    score_breakdown: Record<string, number> | null;
+}
+
 interface PredictionResult {
     material_id: string;
     pred_ehull: number;
@@ -11,6 +28,7 @@ interface PredictionResult {
     uncertainty: string;
     action: string;
     confidence_interval: [number, number];
+    cathode_properties: CathodeProperties | null;
 }
 
 export default function Predict() {
@@ -98,7 +116,7 @@ export default function Predict() {
                     <div className="text-center mb-12">
                         <h1 className="text-4xl font-bold text-gray-900 mb-4">Predict Material Stability</h1>
                         <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                            Upload a CIF file and get instant thermodynamic stability predictions powered by our CHGNet ensemble model.
+                            Upload a CIF file and get multi-property cathode analysis: stability, voltage, capacity, and energy density.
                         </p>
                     </div>
 
@@ -143,7 +161,7 @@ export default function Predict() {
                                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                                                 </svg>
-                                                Running CHGNet Inference...
+                                                Running MACE Ensemble Inference...
                                             </span>
                                         ) : "Predict Stability"}
                                     </button>
@@ -205,6 +223,130 @@ export default function Predict() {
                                         </div>
                                     </div>
 
+                                    {/* Multi-Property Analysis */}
+                                    {result.cathode_properties && (
+                                        <div className="mt-8">
+                                            <h4 className="text-lg font-semibold text-gray-900 mb-4">Cathode Property Analysis</h4>
+
+                                            {/* Composite Score Bar */}
+                                            {result.cathode_properties.composite_score !== null && (
+                                                <div className="mb-6 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl border border-gray-100">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-sm font-semibold text-gray-700">Composite Screening Score</span>
+                                                        <span className="text-2xl font-bold text-blue-700">
+                                                            {(result.cathode_properties.composite_score * 100).toFixed(0)}%
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-full bg-gray-200 rounded-full h-3">
+                                                        <div
+                                                            className={`h-3 rounded-full transition-all duration-500 ${
+                                                                result.cathode_properties.composite_score > 0.7 ? "bg-green-500" :
+                                                                result.cathode_properties.composite_score > 0.4 ? "bg-yellow-500" : "bg-red-400"
+                                                            }`}
+                                                            style={{ width: `${Math.min(100, result.cathode_properties.composite_score * 100)}%` }}
+                                                        />
+                                                    </div>
+                                                    {result.cathode_properties.score_breakdown && (
+                                                        <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+                                                            {Object.entries(result.cathode_properties.score_breakdown).map(([key, val]) => (
+                                                                <div key={key} className="text-center">
+                                                                    <div className="text-gray-400 capitalize">{key.replace('_', ' ')}</div>
+                                                                    <div className="font-semibold text-gray-700">{(val * 100).toFixed(0)}%</div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                {result.cathode_properties.avg_voltage_V !== null && (
+                                                    <div className="bg-purple-50 rounded-xl p-5 border border-purple-100">
+                                                        <p className="text-xs text-purple-500 uppercase tracking-wide mb-1">Avg Voltage</p>
+                                                        <p className="text-2xl font-bold text-purple-900">{result.cathode_properties.avg_voltage_V.toFixed(2)}</p>
+                                                        <p className="text-sm text-purple-400 mt-1">V vs Li/Li+</p>
+                                                        {result.cathode_properties.voltage_confidence && (
+                                                            <span className={`mt-2 inline-block text-xs px-2 py-0.5 rounded-full ${
+                                                                result.cathode_properties.voltage_confidence === "high" ? "bg-green-100 text-green-700" :
+                                                                result.cathode_properties.voltage_confidence === "medium" ? "bg-yellow-100 text-yellow-700" :
+                                                                "bg-gray-100 text-gray-600"
+                                                            }`}>
+                                                                {result.cathode_properties.voltage_confidence} conf.
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {result.cathode_properties.gravimetric_capacity_mAhg !== null && (
+                                                    <div className="bg-emerald-50 rounded-xl p-5 border border-emerald-100">
+                                                        <p className="text-xs text-emerald-500 uppercase tracking-wide mb-1">Capacity</p>
+                                                        <p className="text-2xl font-bold text-emerald-900">{result.cathode_properties.gravimetric_capacity_mAhg.toFixed(0)}</p>
+                                                        <p className="text-sm text-emerald-400 mt-1">mAh/g</p>
+                                                    </div>
+                                                )}
+                                                {result.cathode_properties.gravimetric_energy_Whkg !== null && (
+                                                    <div className="bg-amber-50 rounded-xl p-5 border border-amber-100">
+                                                        <p className="text-xs text-amber-500 uppercase tracking-wide mb-1">Energy Density</p>
+                                                        <p className="text-2xl font-bold text-amber-900">{result.cathode_properties.gravimetric_energy_Whkg.toFixed(0)}</p>
+                                                        <p className="text-sm text-amber-400 mt-1">Wh/kg</p>
+                                                    </div>
+                                                )}
+                                                {result.cathode_properties.density_gcm3 !== null && (
+                                                    <div className="bg-sky-50 rounded-xl p-5 border border-sky-100">
+                                                        <p className="text-xs text-sky-500 uppercase tracking-wide mb-1">Density</p>
+                                                        <p className="text-2xl font-bold text-sky-900">{result.cathode_properties.density_gcm3.toFixed(2)}</p>
+                                                        <p className="text-sm text-sky-400 mt-1">g/cm&sup3;</p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Chemistry details */}
+                                            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                {result.cathode_properties.li_count !== null && (
+                                                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Li / f.u.</p>
+                                                        <p className="text-xl font-bold text-gray-800">{result.cathode_properties.li_count.toFixed(1)}</p>
+                                                    </div>
+                                                )}
+                                                {result.cathode_properties.n_extractable_li !== null && (
+                                                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Extractable Li</p>
+                                                        <p className="text-xl font-bold text-gray-800">{result.cathode_properties.n_extractable_li.toFixed(1)}</p>
+                                                    </div>
+                                                )}
+                                                {result.cathode_properties.tm_elements && result.cathode_properties.tm_elements.length > 0 && (
+                                                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Active TMs</p>
+                                                        <p className="text-xl font-bold text-gray-800">{result.cathode_properties.tm_elements.join(", ")}</p>
+                                                    </div>
+                                                )}
+                                                {result.cathode_properties.anion_framework && (
+                                                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Anion Framework</p>
+                                                        <p className="text-xl font-bold text-gray-800">{result.cathode_properties.anion_framework}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Volumetric metrics */}
+                                            {(result.cathode_properties.volumetric_capacity_mAhcm3 !== null || result.cathode_properties.volumetric_energy_WhL !== null) && (
+                                                <div className="mt-4 grid grid-cols-2 gap-4">
+                                                    {result.cathode_properties.volumetric_capacity_mAhcm3 !== null && (
+                                                        <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                                            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vol. Capacity</p>
+                                                            <p className="text-xl font-bold text-gray-800">{result.cathode_properties.volumetric_capacity_mAhcm3.toFixed(0)} <span className="text-sm font-normal text-gray-500">mAh/cm&sup3;</span></p>
+                                                        </div>
+                                                    )}
+                                                    {result.cathode_properties.volumetric_energy_WhL !== null && (
+                                                        <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                                            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vol. Energy</p>
+                                                            <p className="text-xl font-bold text-gray-800">{result.cathode_properties.volumetric_energy_WhL.toFixed(0)} <span className="text-sm font-normal text-gray-500">Wh/L</span></p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* OOD / High Uncertainty Warning */}
                                     {result.uncertainty === "High" && (
                                         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
@@ -236,8 +378,8 @@ export default function Predict() {
                                     )}
 
                                     {/* Interpretation */}
-                                    <div className="p-6 bg-blue-50 rounded-xl border border-blue-100">
-                                        <h4 className="font-semibold text-blue-900 mb-2">Interpretation</h4>
+                                    <div className="mt-6 p-6 bg-blue-50 rounded-xl border border-blue-100">
+                                        <h4 className="font-semibold text-blue-900 mb-2">Screening Summary</h4>
                                         <p className="text-sm text-blue-700">
                                             {result.action === "KEEP" || result.action === "DFT" ? (
                                                 <>This material is predicted to be thermodynamically stable. <strong>Recommended for DFT validation.</strong></>
@@ -247,8 +389,16 @@ export default function Predict() {
                                                 <>This material is predicted to be unstable. It may not be a viable candidate for synthesis.</>
                                             )}
                                         </p>
+                                        {result.cathode_properties && result.cathode_properties.composite_score !== null && (
+                                            <p className="text-sm text-blue-700 mt-2">
+                                                Multi-property composite score: <strong>{(result.cathode_properties.composite_score * 100).toFixed(0)}%</strong>
+                                                {result.cathode_properties.composite_score > 0.7 ? " — Strong candidate across all metrics." :
+                                                 result.cathode_properties.composite_score > 0.4 ? " — Moderate candidate, review individual properties." :
+                                                 " — Weak composite score, may have limitations in voltage, capacity, or stability."}
+                                            </p>
+                                        )}
                                         <p className="text-xs text-blue-500 mt-3">
-                                            95% Confidence Interval: [{result.confidence_interval[0].toFixed(3)}, {result.confidence_interval[1].toFixed(3)}] eV/atom
+                                            90% Confidence Interval: [{result.confidence_interval[0].toFixed(3)}, {result.confidence_interval[1].toFixed(3)}] eV/atom
                                         </p>
                                     </div>
                                 </div>
@@ -265,13 +415,13 @@ export default function Predict() {
                         </div>
                         <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
                             <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center mb-4 text-indigo-600 font-bold">2</div>
-                            <h3 className="font-semibold text-gray-900 mb-2">CHGNet Inference</h3>
-                            <p className="text-sm text-gray-600">5-member CHGNet ensemble predicts E<sub>hull</sub> with calibrated uncertainty.</p>
+                            <h3 className="font-semibold text-gray-900 mb-2">MACE-MP-0 Ensemble</h3>
+                            <p className="text-sm text-gray-600">5-member MACE ensemble predicts E<sub>hull</sub> with conformal calibration and OOD detection.</p>
                         </div>
                         <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
                             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-4 text-green-600 font-bold">3</div>
-                            <h3 className="font-semibold text-gray-900 mb-2">Get Recommendation</h3>
-                            <p className="text-sm text-gray-600">Receive KEEP, MAYBE, or KILL recommendations to prioritize your research.</p>
+                            <h3 className="font-semibold text-gray-900 mb-2">Multi-Property Analysis</h3>
+                            <p className="text-sm text-gray-600">Get stability, voltage, capacity, and energy density with a composite screening score.</p>
                         </div>
                     </div>
                 </div>
@@ -281,7 +431,7 @@ export default function Predict() {
             <footer className="border-t border-gray-200 bg-white">
                 <div className="max-w-5xl mx-auto px-6 py-6">
                     <div className="flex justify-between items-center text-sm text-gray-500 mb-3">
-                        <p>CathodeScreen · CHGNet v1-Li-Cathode</p>
+                        <p>CathodeScreen · MACE-MP-0 Ensemble</p>
                         <div className="flex gap-4">
                             <a href="https://github.com/ErenAri" target="_blank" className="hover:text-gray-900">GitHub</a>
                             <a href={`${API_BASE_URL}/docs`} target="_blank" className="hover:text-gray-900">API</a>

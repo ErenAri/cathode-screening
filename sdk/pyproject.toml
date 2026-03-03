@@ -1,0 +1,26 @@
+[project]
+name = "cathode-screen"
+version = "0.1.0"
+description = "Python SDK and CLI for CathodeScreen — AI-powered battery cathode screening"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "httpx>=0.24,<1",
+    "click>=8.0,<9",
+    "rich>=13.0,<14",
+]
+
+[project.scripts]
+cathode-screen = "cathode_screen.cli:main"
+
+[project.urls]
+Homepage = "https://cathode-screening.vercel.app"
+API = "https://cathode-screening-api.onrender.com/docs"
+Repository = "https://github.com/ErenAri/cathode-screening"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cathode_screen*"]

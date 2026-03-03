@@ -54,6 +54,11 @@ SCREENING_PROOF_FILES: dict[str, Path] = {
 }
 
 from cathode_screening.inference.artifact_manifest import load_manifest
+from cathode_screening.monitoring.audit_trail import (
+    AuditTrail,
+    compute_input_hash,
+    get_audit_trail,
+)
 from cathode_screening.monitoring.metrics import MetricsCollector
 from cathode_screening.monitoring.rate_limit import RateLimiter
 
@@ -548,13 +553,20 @@ async def _parse_structure(cif_file: UploadFile):
 async def _predict_structure_core(cif_file: UploadFile):
     from .inference import get_predictor
 
+    # Read content for hashing before parsing resets the stream
+    await cif_file.seek(0)
+    raw_content = await cif_file.read()
+    await cif_file.seek(0)
+    input_hash = compute_input_hash(raw_content)
+
     structure = await _parse_structure(cif_file)
 
     predictor = get_predictor()
-    return predictor.predict_structure(
+    result = predictor.predict_structure(
         structure,
         material_id=cif_file.filename or "uploaded",
     )
+    return result, input_hash
 
 async def get_api_key(
     request: Request,
@@ -732,6 +744,24 @@ app.add_middleware(
 _setup_otel()
 
 
+class CathodePropertiesResult(BaseModel):
+    """Analytical cathode material properties."""
+    gravimetric_capacity_mAhg: Optional[float] = None
+    volumetric_capacity_mAhcm3: Optional[float] = None
+    avg_voltage_V: Optional[float] = None
+    voltage_confidence: Optional[str] = None
+    gravimetric_energy_Whkg: Optional[float] = None
+    volumetric_energy_WhL: Optional[float] = None
+    li_count: Optional[float] = None
+    li_fraction: Optional[float] = None
+    n_extractable_li: Optional[float] = None
+    density_gcm3: Optional[float] = None
+    tm_elements: Optional[List[str]] = None
+    anion_framework: Optional[str] = None
+    composite_score: Optional[float] = None
+    score_breakdown: Optional[dict] = None
+
+
 class PredictionResult(BaseModel):
     """Single prediction result."""
     material_id: str
@@ -740,6 +770,7 @@ class PredictionResult(BaseModel):
     uncertainty: str  # "Low", "Medium", "High"
     action: str  # "DFT", "HOLD", "SKIP"
     confidence_interval: tuple[float, float]
+    cathode_properties: Optional[CathodePropertiesResult] = None
 
 
 class PredictionResponse(BaseModel):
@@ -1351,6 +1382,34 @@ async def get_discovery_candidates(
     }
 
 
+# ===========================================================================
+# Audit Trail Endpoints
+# ===========================================================================
+
+@app.get("/audit/recent")
+async def audit_recent(
+    request: Request,
+    n: int = 50,
+    api_key: str = Security(get_api_key),
+):
+    """Get the most recent N prediction audit records."""
+    if n > 500:
+        n = 500
+    audit = get_audit_trail()
+    records = audit.get_recent(n)
+    return {"count": len(records), "records": records}
+
+
+@app.get("/audit/stats")
+async def audit_stats(
+    request: Request,
+    api_key: str = Security(get_api_key),
+):
+    """Get today's prediction audit statistics."""
+    audit = get_audit_trail()
+    return audit.get_stats()
+
+
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_structure(
     request: Request,
@@ -1368,10 +1427,10 @@ async def predict_structure(
 
     try:
         async with _inference_slot(request_id):
-            result = await _predict_structure_core(cif_file)
+            result, input_hash = await _predict_structure_core(cif_file)
 
         p_stable = result.p_stable if result.p_stable is not None else 0.0
-        uncertainty = classify_uncertainty(result.uncertainty_epistemic)        
+        uncertainty = classify_uncertainty(result.uncertainty_epistemic)
         action = decision_to_action(result.decision)
         latency_s = time.perf_counter() - start
 
@@ -1385,6 +1444,23 @@ async def predict_structure(
                 ehull_pred=result.ehull_pred,
                 latency_s=latency_s,
             )
+
+        # Audit trail
+        try:
+            audit = get_audit_trail()
+            audit.log_prediction(
+                request_id=request_id,
+                input_hash=input_hash,
+                material_id=result.material_id,
+                formula=result.formula,
+                prediction=result.to_dict(),
+                cathode_properties=result.cathode_properties,
+                latency_ms=latency_s * 1000,
+                client_id=_client_id(request),
+                mode=result.decision_mode,
+            )
+        except Exception:
+            pass  # Audit logging must never break predictions
 
         if LOG_PREDICTIONS:
             _log_event(
@@ -1403,6 +1479,15 @@ async def predict_structure(
                 }
             )
 
+        # Build cathode properties if available
+        cathode_props = None
+        if result.cathode_properties:
+            cathode_props = CathodePropertiesResult(**{
+                k: result.cathode_properties[k]
+                for k in CathodePropertiesResult.model_fields
+                if k in result.cathode_properties
+            })
+
         return PredictionResponse(
             success=True,
             prediction=PredictionResult(
@@ -1412,6 +1497,7 @@ async def predict_structure(
                 uncertainty=uncertainty,
                 action=action,
                 confidence_interval=(round(result.ehull_lower, 4), round(result.ehull_upper, 4)),
+                cathode_properties=cathode_props,
             ),
         )
         
@@ -1553,6 +1639,14 @@ async def predict_batch(
         uncertainty = classify_uncertainty(result.uncertainty_epistemic)
         action = decision_to_action(result.decision)
 
+        batch_cathode_props = None
+        if result.cathode_properties:
+            batch_cathode_props = CathodePropertiesResult(**{
+                k: result.cathode_properties[k]
+                for k in CathodePropertiesResult.model_fields
+                if k in result.cathode_properties
+            })
+
         predictions.append(
             PredictionResult(
                 material_id=result.material_id,
@@ -1561,6 +1655,7 @@ async def predict_batch(
                 uncertainty=uncertainty,
                 action=action,
                 confidence_interval=(round(result.ehull_lower, 4), round(result.ehull_upper, 4)),
+                cathode_properties=batch_cathode_props,
             )
         )
 

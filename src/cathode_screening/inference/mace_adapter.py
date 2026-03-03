@@ -18,6 +18,10 @@ import torch
 from pymatgen.core import Structure
 
 from cathode_screening.inference.decision_predictor import DecisionOutput
+from cathode_screening.inference.property_calculators import (
+    compute_cathode_properties,
+    compute_composite_score,
+)
 from cathode_screening.models.mace_finetune.model import MACEFineTuner
 from cathode_screening.models.mace_finetune.data import _compute_neighbors
 
@@ -275,6 +279,15 @@ class MACEDecisionService:
         else:
             explanation = f"Uncertain: q50={q50:.3f} [{q10:.3f}, {q90:.3f}] eV"
 
+        # Compute multi-property cathode analysis
+        try:
+            cathode_props = compute_cathode_properties(structure, actual_formula)
+            cathode_props = compute_composite_score(cathode_props, q50, confidence)
+            cathode_props_dict = cathode_props.to_dict()
+        except Exception as exc:
+            logger.warning("Could not compute cathode properties: %s", exc)
+            cathode_props_dict = None
+
         return DecisionOutput(
             material_id=material_id,
             formula=actual_formula,
@@ -294,6 +307,7 @@ class MACEDecisionService:
             p_stable=p_stable,
             p_metastable=p_meta,
             q50_per_member=q50_members,
+            cathode_properties=cathode_props_dict,
         )
 
     def predict_structures(
@@ -303,7 +317,11 @@ class MACEDecisionService:
         formulas: Optional[Sequence[str]] = None,
         mode: Optional[str] = None,
     ) -> List[DecisionOutput]:
-        """Batch prediction for multiple structures."""
+        """Batch prediction for multiple structures.
+
+        Each result includes ML stability prediction plus analytical
+        cathode properties (capacity, voltage proxy, energy density).
+        """
         if not structures:
             return []
         n = len(structures)

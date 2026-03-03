@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-03-03T07:54:49.445382+00:00",
+  "project": "CathodeScreen",
+  "version": "1.0.0",
+  "model": {
+    "type": "MACE-MP-0 fine-tuned ensemble",
+    "backbone": "medium",
+    "ensemble_size": 5,
+    "created_at": "2026-03-02T16:32:09.436386",
+    "target": "energy_above_hull (eV/atom)",
+    "training_data": {
+      "dataset": "mp_cathodes_v1",
+      "train": 8522,
+      "val": 1842,
+      "test": 1013
+    },
+    "performance": {
+      "val_mae_mean": 0.033745305985212325,
+      "val_mae_std": 0.0024821458818512342,
+      "test_mae_mean": 0.03065414950251579,
+      "test_mae_std": 0.0017988067539380303
+    },
+    "per_member_val_mae": [
+      0.0328,
+      0.0345,
+      0.0346,
+      0.0297,
+      0.0372
+    ],
+    "per_member_test_mae": [
+      0.0301,
+      0.0326,
+      0.0307,
+      0.0276,
+      0.0323
+    ]
+  },
+  "calibration": {
+    "method": "split_conformal_symmetric",
+    "target_coverage": 0.9,
+    "raw_coverage": 0.6395,
+    "calibrated_coverage": 0.9007,
+    "conformal_delta": 0.0213,
+    "n_calibration": 1842
+  },
+  "cross_database_screening": {
+    "h100_ehull": {
+      "ef_1pct": "7.60x [0.00, 22.17]",
+      "auprc": "0.082",
+      "recall_100": "22.0% [4.8%, 41.7%]",
+      "precision_100": "3.9% [1.0%, 8.0%]",
+      "random_baseline": "1.7% +/- 1.3%",
+      "dataset_prevalence": "1.7%",
+      "top_1pct_hit_rate": "10.0%"
+    },
+    "oqmd": {
+      "ef_1pct": "1.40x [0.57, 2.34]",
+      "auprc": "0.702",
+      "recall_100": "13.1% [10.7%, 15.3%]",
+      "precision_100": "68.1% [57.0%, 78.0%]",
+      "random_baseline": "22.6% +/- 4.2%",
+      "dataset_prevalence": "23.0%",
+      "top_1pct_hit_rate": "31.8%"
+    },
+    "jarvis": {
+      "ef_1pct": "1.77x [1.44, 2.08]",
+      "auprc": "0.685",
+      "recall_100": "5.3% [4.7%, 5.8%]",
+      "precision_100": "79.0% [69.0%, 87.0%]",
+      "random_baseline": "43.2% +/- 5.0%",
+      "dataset_prevalence": "43.2%",
+      "top_1pct_hit_rate": "76.5%"
+    }
+  },
+  "dft_validation": {
+    "total_candidates_screened": 50,
+    "decisions": {
+      "accept": 18,
+      "hold": 31,
+      "unknown": 1
+    },
+    "accept_rate": 36.0,
+    "source": "JARVIS cathode subset (50 candidates)",
+    "dft_method": "Quantum ESPRESSO (PBE, PAW)"
+  },
+  "screening_summary_raw": "Screening Decision Summary (Provisional)\ninput=reports\\dft_batch_jarvis_50_mix_final_ranked_estimated.csv\noutput=reports\\screening_decision_provisional.csv\ntotal_candidates=50\naccept=18\nhold=31\nunknown=1\ntop20_unresolved=2\nnote=Based on estimated run5 status while billing-disabled blocks exact content reads.\n",
+  "pipeline": {
+    "steps": [
+      "1. Structure ingestion (CIF/pymatgen)",
+      "2. MACE-MP-0 backbone feature extraction (frozen)",
+      "3. 5-member ensemble quantile regression (q10, q50, q90)",
+      "4. Conformal calibration (90% coverage guarantee)",
+      "5. OOD detection (composition, embedding, disagreement gates)",
+      "6. Decision policy (KEEP/MAYBE/KILL)",
+      "7. Multi-property analysis (voltage, capacity, energy density)",
+      "8. Composite screening score (stability + capacity + voltage + energy)"
+    ],
+    "infrastructure": {
+      "training": "RTX 2060 (local, ~45 min per member)",
+      "inference": "Render (CPU, ~2s per structure)",
+      "frontend": "Vercel (Next.js)",
+      "api": "FastAPI + MACE-MP-0 ensemble"
+    }
+  },
+  "key_claims": {
+    "ensemble_val_mae": "0.0337 +/- 0.0025 eV/atom",
+    "ensemble_test_mae": "0.0307 +/- 0.0018 eV/atom",
+    "calibration_coverage": "90.1%",
+    "training_data_size": "8,522",
+    "dft_accept_rate": "36%",
+    "jarvis_precision_at_100": "79.0% [69.0%, 87.0%]",
+    "jarvis_enrichment_1pct": "1.77x [1.44, 2.08]"
+  }
+}
