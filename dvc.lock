@@ -1,0 +1,85 @@
+schema: '2.0'
+stages:
+  calibrate:
+    cmd: python scripts/05b_conformal_calibrate.py --val-predictions 
+      data/predictions/ensemble_soap_loco_test.parquet --output-dir 
+      data/calibration
+    deps:
+    - path: data/predictions/ensemble_soap_loco_test.parquet
+      hash: md5
+      md5: 5e603af1fb43e9c4c37e651a873722df
+      size: 146139
+    - path: scripts/05b_conformal_calibrate.py
+      hash: md5
+      md5: 79331fbed0b1b17d10a3f17418911e46
+      size: 2663
+    outs:
+    - path: data/calibration/conformal_params.json
+      hash: md5
+      md5: 59b6803872211d0ffb66c8d9dd78b12e
+      size: 256
+  evaluate:
+    cmd: python scripts/09_evaluate_predictions.py --input 
+      data/predictions/ensemble_soap_loco_test.parquet --conformal-params 
+      data/calibration/conformal_params.json --output 
+      data/reports/model_validation/model_validation_report.json
+    deps:
+    - path: data/calibration/conformal_params.json
+      hash: md5
+      md5: 59b6803872211d0ffb66c8d9dd78b12e
+      size: 256
+    - path: data/predictions/ensemble_soap_loco_test.parquet
+      hash: md5
+      md5: 5e603af1fb43e9c4c37e651a873722df
+      size: 146139
+    - path: scripts/09_evaluate_predictions.py
+      hash: md5
+      md5: 8983297fe7ae4bd07f374b89d03ede7b
+      size: 5782
+    outs:
+    - path: data/reports/model_validation/model_validation_report.json
+      hash: md5
+      md5: 91c3c738075e948f6092d95f4a2040ed
+      size: 887
+  generate_manifest:
+    cmd: python scripts/08_generate_artifact_manifest.py --artifact-dir 
+      artifacts/models/mace_ensemble_v1 --output 
+      data/reports/artifact_manifest.json
+    deps:
+    - path: artifacts/models/mace_ensemble_v1/
+      hash: md5
+      md5: 39847678bedd3d6866eb48ef73dc0a13.dir
+      size: 111049058
+      nfiles: 17
+    - path: scripts/08_generate_artifact_manifest.py
+      hash: md5
+      md5: 228897f44819de8d847aee9203fad71f
+      size: 3402
+    outs:
+    - path: data/reports/artifact_manifest.json
+      hash: md5
+      md5: 533e5ac5c4dfa2786fa0a5a97a343841
+      size: 3564
+  validate_release:
+    cmd: python scripts/12_validate_release.py --input 
+      data/predictions/ensemble_soap_loco_test.parquet --conformal-params 
+      data/calibration/conformal_params.json --output 
+      data/reports/model_validation/release_validation.json
+    deps:
+    - path: data/reports/artifact_manifest.json
+      hash: md5
+      md5: 533e5ac5c4dfa2786fa0a5a97a343841
+      size: 3564
+    - path: data/reports/model_validation/model_validation_report.json
+      hash: md5
+      md5: 91c3c738075e948f6092d95f4a2040ed
+      size: 887
+    - path: scripts/12_validate_release.py
+      hash: md5
+      md5: 9fe662e72a333bd2eddf1057611b5360
+      size: 4524
+    outs:
+    - path: data/reports/model_validation/release_validation.json
+      hash: md5
+      md5: ba44da791885bea8754bd8f7fcae3c02
+      size: 1278
