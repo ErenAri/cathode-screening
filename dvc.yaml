@@ -1,0 +1,148 @@
+# DVC Pipeline Definition
+# Tracks data lineage from raw fetch → graph cache → training → calibration → release
+#
+# Usage:
+#   dvc repro           # Reproduce full pipeline
+#   dvc repro train     # Reproduce from training onward
+#   dvc dag             # View pipeline DAG
+#   dvc metrics show    # Show tracked metrics
+
+stages:
+  fetch:
+    cmd: python scripts/00_fetch_mp.py
+    deps:
+      - scripts/00_fetch_mp.py
+    outs:
+      - data/raw/mp_tmo_raw.parquet:
+          cache: true
+    params:
+      - configs/dataset_mp.yaml:
+          - query
+          - fields
+    meta:
+      description: "Fetch raw TMO data from Materials Project API"
+      owner: data-pipeline
+
+  filter:
+    cmd: python scripts/01_filter_cathodes.py
+    deps:
+      - scripts/01_filter_cathodes.py
+      - data/raw/mp_tmo_raw.parquet
+    outs:
+      - data/processed/mp/cathodes_filtered.parquet:
+          cache: true
+    meta:
+      description: "Filter for Li-cathode compositions"
+
+  cache_structures:
+    cmd: python scripts/02b_cache_structures.py
+    deps:
+      - scripts/02b_cache_structures.py
+      - data/processed/mp/cathodes_filtered.parquet
+    outs:
+      - data/processed/mp/structures/:
+          cache: true
+    meta:
+      description: "Cache crystal structures as CIF files"
+
+  build_graphs:
+    cmd: python scripts/02_build_graph_cache.py
+    deps:
+      - scripts/02_build_graph_cache.py
+      - data/processed/mp/structures/
+    outs:
+      - data/cache/graph_cache/:
+          cache: true
+    meta:
+      description: "Build graph representations with RBF features"
+
+  make_splits:
+    cmd: python scripts/03a_make_soap_loco_splits.py
+    deps:
+      - scripts/03a_make_soap_loco_splits.py
+      - data/processed/mp/cathodes_filtered.parquet
+    outs:
+      - data/splits/soap_loco/:
+          cache: true
+    params:
+      - configs/dataset_mp.yaml:
+          - splits
+    meta:
+      description: "Generate SOAP-LOCO cluster splits"
+
+  train:
+    cmd: python scripts/04_train_ensemble.py --config configs/train_mace_ehull.yaml
+    deps:
+      - scripts/04_train_ensemble.py
+      - configs/train_mace_ehull.yaml
+      - data/cache/graph_cache/
+      - data/splits/soap_loco/
+    outs:
+      - artifacts/models/mace_ensemble_v1/:
+          cache: true
+          persist: true
+    params:
+      - configs/train_mace_ehull.yaml:
+          - model
+          - training
+          - ensemble
+    metrics:
+      - data/reports/training_metrics.json:
+          cache: false
+    meta:
+      description: "Train 5-member MACE ensemble"
+
+  predict:
+    cmd: python scripts/07_predict_ensemble.py
+    deps:
+      - scripts/07_predict_ensemble.py
+      - artifacts/models/mace_ensemble_v1/
+      - data/splits/soap_loco/
+    outs:
+      - data/predictions/ensemble_soap_loco_test.parquet:
+          cache: true
+    meta:
+      description: "Generate ensemble predictions on val/test/LOCO"
+
+  calibrate:
+    cmd: python scripts/05b_conformal_calibrate.py
+    deps:
+      - scripts/05b_conformal_calibrate.py
+      - data/predictions/ensemble_soap_loco_test.parquet
+    outs:
+      - artifacts/models/mace_ensemble_v1/conformal_params.json:
+          cache: false
+    meta:
+      description: "Compute conformal calibration deltas"
+
+  evaluate:
+    cmd: python scripts/09_evaluate_predictions.py
+    deps:
+      - scripts/09_evaluate_predictions.py
+      - data/predictions/ensemble_soap_loco_test.parquet
+      - artifacts/models/mace_ensemble_v1/conformal_params.json
+    metrics:
+      - data/reports/model_validation/model_validation_report.json:
+          cache: false
+    meta:
+      description: "Run governance checks and generate evaluation report"
+
+  generate_manifest:
+    cmd: python scripts/08_generate_artifact_manifest.py
+    deps:
+      - scripts/08_generate_artifact_manifest.py
+      - artifacts/models/mace_ensemble_v1/
+    outs:
+      - artifacts/models/mace_ensemble_v1/manifest.json:
+          cache: false
+    meta:
+      description: "Generate signed artifact manifest"
+
+  validate_release:
+    cmd: python scripts/12_validate_release.py
+    deps:
+      - scripts/12_validate_release.py
+      - data/reports/model_validation/model_validation_report.json
+      - artifacts/models/mace_ensemble_v1/manifest.json
+    meta:
+      description: "Gate release on governance checks"

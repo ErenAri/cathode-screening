@@ -1,6 +1,32 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=cathode
+      - POSTGRES_USER=cathode
+      - POSTGRES_PASSWORD=cathode_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cathode"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -13,9 +39,58 @@ services:
       - CATHODE_AUTH_ENABLED=false
       - CATHODE_REQUIRE_MANIFEST_SIGNATURE=${CATHODE_REQUIRE_MANIFEST_SIGNATURE:-true}
       - CATHODE_MANIFEST_HMAC_KEY=${CATHODE_MANIFEST_HMAC_KEY}
+      - CATHODE_AUDIT_BACKEND=${CATHODE_AUDIT_BACKEND:-jsonl}
+      - CATHODE_DATABASE_URL=postgresql://cathode:cathode_dev@postgres:5432/cathode
+      - CATHODE_REDIS_URL=redis://redis:6379/0
+      # Shadow deployment (disabled by default)
+      - CATHODE_SHADOW_ENABLED=${CATHODE_SHADOW_ENABLED:-false}
+      - CATHODE_SHADOW_MODEL_DIR=${CATHODE_SHADOW_MODEL_DIR:-}
+      - CATHODE_SHADOW_TRAFFIC_PERCENT=${CATHODE_SHADOW_TRAFFIC_PERCENT:-10}
+      # Dynamic batching (disabled by default)
+      - CATHODE_ENABLE_BATCHING=${CATHODE_ENABLE_BATCHING:-false}
+      - CATHODE_BATCH_SIZE=${CATHODE_BATCH_SIZE:-32}
+      - CATHODE_BATCH_TIMEOUT_MS=${CATHODE_BATCH_TIMEOUT_MS:-200}
+      # Drift alerting
+      - CATHODE_DRIFT_ALERT_BACKEND=${CATHODE_DRIFT_ALERT_BACKEND:-console}
+      - CATHODE_SLACK_WEBHOOK_URL=${CATHODE_SLACK_WEBHOOK_URL:-}
     volumes:
-      - ./artifacts:/app/artifacts # Live usage of artifacts (optional)
-      - ./data:/app/data # Live usage of data (optional)
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: celery -A cathode_screening.queue.celery_app worker --loglevel=info --concurrency=2 -Q inference,monitoring
+    environment:
+      - CATHODE_ENV=development
+      - CATHODE_MODEL_TYPE=${CATHODE_MODEL_TYPE:-mace}
+      - CATHODE_DEVICE=${CATHODE_DEVICE:-cpu}
+      - CATHODE_REDIS_URL=redis://redis:6379/0
+      - CATHODE_DATABASE_URL=postgresql://cathode:cathode_dev@postgres:5432/cathode
+      - CATHODE_DRIFT_ALERT_BACKEND=${CATHODE_DRIFT_ALERT_BACKEND:-console}
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: celery -A cathode_screening.queue.celery_app beat --loglevel=info
+    environment:
+      - CATHODE_REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
@@ -24,6 +99,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8080 # Internal network communication
+      - NEXT_PUBLIC_API_URL=http://backend:8080
     depends_on:
       - backend
+
+volumes:
+  pgdata:

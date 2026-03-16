@@ -1,0 +1,43 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cathode-screening
+
+resources:
+  - ../../base
+  - network-policy.yaml
+  - pod-disruption-budget.yaml
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cathode-backend
+      spec:
+        replicas: 3
+        template:
+          spec:
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: cathode-backend
+    target:
+      kind: Deployment
+      name: cathode-backend
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: cathode-config
+      data:
+        CATHODE_ENV: "production"
+        CATHODE_RATE_LIMIT_PER_MINUTE: "120"
+        CATHODE_MAX_CONCURRENT_REQUESTS: "16"
+        CATHODE_MULTI_TENANT: "true"
+    target:
+      kind: ConfigMap
+      name: cathode-config

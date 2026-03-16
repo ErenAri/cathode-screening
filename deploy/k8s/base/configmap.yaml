@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cathode-config
+  namespace: cathode-screening
+  labels:
+    app.kubernetes.io/name: cathode-screening
+data:
+  CATHODE_ENV: "production"
+  CATHODE_AUTH_ENABLED: "true"
+  CATHODE_FORCE_HTTPS: "true"
+  CATHODE_LOG_FORMAT: "json"
+  CATHODE_LOG_REQUESTS: "true"
+  CATHODE_METRICS_ENABLED: "true"
+  CATHODE_PROMETHEUS_ENABLED: "true"
+  CATHODE_OTEL_ENABLED: "true"
+  CATHODE_OTEL_SERVICE_NAME: "cathode-screening"
+  CATHODE_TRUST_PROXY: "true"
+  CATHODE_TRUST_PROXY_HOPS: "2"
+  CATHODE_RATE_LIMIT_PER_MINUTE: "120"
+  CATHODE_MAX_CONCURRENT_REQUESTS: "16"
+  CATHODE_MAX_BATCH_SIZE: "25"
+  CATHODE_MAX_ATOMS: "512"
+  CATHODE_REQUIRE_CALIBRATION: "true"
+  CATHODE_REQUIRE_MANIFEST_SIGNATURE: "true"
+  CATHODE_REQUIRE_CATHODE_COMPOSITION: "true"
+  CATHODE_AUDIT_BACKEND: "postgres"
+  CATHODE_RBAC_ENABLED: "true"
+  CATHODE_MULTI_TENANT: "false"
+  CATHODE_ENABLE_BATCHING: "true"
+  CATHODE_BATCH_SIZE: "32"
+  CATHODE_BATCH_TIMEOUT_MS: "200"
+  CATHODE_DRIFT_ALERT_BACKEND: "slack"
+  # Redis
+  CATHODE_REDIS_URL: "redis://redis-master:6379/0"
+  # PostgreSQL
+  CATHODE_DATABASE_URL: "postgresql://cathode:$(POSTGRES_PASSWORD)@postgres:5432/cathode"

@@ -1,0 +1,11 @@
+# DVC ignore patterns
+.git
+.gitignore
+.dvc
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+.next
+.venv
+.venv-training

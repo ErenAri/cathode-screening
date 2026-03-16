@@ -1,0 +1,55 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cathode-screening-staging
+
+resources:
+  - ../../base
+
+namePrefix: staging-
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cathode-backend
+      spec:
+        replicas: 1
+    target:
+      kind: Deployment
+      name: cathode-backend
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cathode-frontend
+      spec:
+        replicas: 1
+    target:
+      kind: Deployment
+      name: cathode-frontend
+  - patch: |-
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: cathode-backend-hpa
+      spec:
+        minReplicas: 1
+        maxReplicas: 3
+    target:
+      kind: HorizontalPodAutoscaler
+      name: cathode-backend-hpa
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: cathode-config
+      data:
+        CATHODE_ENV: "staging"
+        CATHODE_RATE_LIMIT_PER_MINUTE: "60"
+        CATHODE_MAX_CONCURRENT_REQUESTS: "8"
+        CATHODE_MULTI_TENANT: "false"
+    target:
+      kind: ConfigMap
+      name: cathode-config

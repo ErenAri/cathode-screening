@@ -94,6 +94,10 @@ reports/dft_qe_*/**/*.save/
 reports/dft_qe_*/**/out/
 reports/dft_qe_*/run_all_qe_parallel.log
 
+# --- DVC ---
+/dvc.lock
+*.dvc
+
 # --- GCP / Training ---
 .venv-training/
 checkpoints/

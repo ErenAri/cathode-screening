@@ -62,8 +62,31 @@ from cathode_screening.monitoring.audit_trail import (
     compute_input_hash,
     get_audit_trail,
 )
+from cathode_screening.monitoring.audit_db import get_audit_backend
 from cathode_screening.monitoring.metrics import MetricsCollector
 from cathode_screening.monitoring.rate_limit import RateLimiter
+
+# Enterprise auth (RBAC, multi-tenancy, SSO)
+try:
+    from cathode_screening.auth.rbac import (
+        Identity,
+        Permission,
+        Role,
+        get_key_store,
+        is_rbac_enabled,
+    )
+    from cathode_screening.auth.tenancy import (
+        TENANT_HEADER,
+        TenantContext,
+        is_multi_tenant,
+        resolve_tenant,
+        set_tenant,
+    )
+    from cathode_screening.auth.sso import SSOConfig, decode_session_jwt, mount_sso_routes
+
+    _HAS_ENTERPRISE_AUTH = True
+except ImportError:
+    _HAS_ENTERPRISE_AUTH = False
 
 # Optional secrets bootstrap before reading env config.
 def _parse_kv_lines(raw: str) -> dict:
@@ -645,6 +668,13 @@ async def get_api_key(
     request: Request,
     api_key_header: str = Security(api_key_header),
 ):
+    """Authenticate the request and return a key string or Identity.
+
+    When RBAC is enabled, returns an :class:`Identity` with role and
+    org information.  Legacy mode returns the raw API key string (or
+    ``None`` if auth is disabled).  Callers that need role checks should
+    use :func:`get_identity` instead.
+    """
     if not AUTH_ENABLED:
         return None
     client_id = _client_id(request)
@@ -660,6 +690,53 @@ async def get_api_key(
     candidate = api_key_header
     if not candidate:
         candidate = _extract_bearer_token(request.headers.get("authorization"))
+
+    # --- RBAC path ---
+    if _HAS_ENTERPRISE_AUTH and is_rbac_enabled():
+        # Try SSO JWT first
+        if candidate:
+            sso_cfg = SSOConfig.from_env()
+            if sso_cfg.enabled:
+                claims = decode_session_jwt(sso_cfg, candidate)
+                if claims:
+                    role = Role(claims.get("role", "viewer"))
+                    identity = Identity(
+                        key_id=f"sso:{claims.get('sub', 'unknown')[:8]}",
+                        role=role,
+                        org_id=claims.get("org_id"),
+                        description=f"SSO user {claims.get('email', '')}",
+                    )
+                    # Set tenant context
+                    tenant = resolve_tenant(
+                        org_id_from_key=identity.org_id,
+                        header_value=request.headers.get(TENANT_HEADER),
+                        is_admin=(identity.role == Role.ADMIN),
+                    )
+                    set_tenant(tenant)
+                    return identity
+
+        # Try API key via RBAC key store
+        if candidate:
+            identity = get_key_store().authenticate(candidate)
+            if identity is not None:
+                # Set tenant context
+                tenant = resolve_tenant(
+                    org_id_from_key=identity.org_id,
+                    header_value=request.headers.get(TENANT_HEADER),
+                    is_admin=(identity.role == Role.ADMIN),
+                )
+                set_tenant(tenant)
+                return identity
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_error_detail(
+                "invalid_credentials",
+                "Could not validate credentials (RBAC)",
+            ),
+        )
+
+    # --- Legacy flat-key path ---
     if candidate and _is_valid_api_key(candidate):
         return candidate
     raise HTTPException(
@@ -670,10 +747,36 @@ async def get_api_key(
         ),
     )
 
+
+def require_permission(permission_value: str):
+    """FastAPI dependency factory for RBAC permission checks.
+
+    Usage::
+
+        @app.post("/admin/action")
+        async def admin_action(
+            identity = Security(require_permission("admin:registry")),
+        ):
+            ...
+
+    When RBAC is disabled, passes through without checks.
+    """
+    async def _check(
+        request: Request,
+        api_key_header: str = Security(api_key_header),
+    ):
+        auth_result = await get_api_key(request, api_key_header)
+        if _HAS_ENTERPRISE_AUTH and is_rbac_enabled() and auth_result is not None:
+            perm = Permission(permission_value)
+            auth_result.require_permission(perm)
+        return auth_result
+
+    return _check
+
 app = FastAPI(
     title="CathodeScreen API",
     description="AI-powered screening of battery cathode materials",
-    version="1.0.0",
+    version="1.2.0",
 )
 
 def _setup_otel() -> None:
@@ -1030,7 +1133,7 @@ async def get_metrics_prometheus(api_key: str = Security(get_api_key)):
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"status": "ok", "service": "CathodeScreen API", "version": "1.0.0"}
+    return {"status": "ok", "service": "CathodeScreen API", "version": "1.2.0"}
 
 @app.get("/ready")
 async def ready():
@@ -1959,7 +2062,7 @@ async def audit_recent(
     """Get the most recent N prediction audit records."""
     if n > 500:
         n = 500
-    audit = get_audit_trail()
+    audit = get_audit_backend()
     records = audit.get_recent(n)
     return {"count": len(records), "records": records}
 
@@ -1970,7 +2073,7 @@ async def audit_stats(
     api_key: str = Security(get_api_key),
 ):
     """Get today's prediction audit statistics."""
-    audit = get_audit_trail()
+    audit = get_audit_backend()
     return audit.get_stats()
 
 
@@ -2011,7 +2114,7 @@ async def predict_structure(
 
         # Audit trail
         try:
-            audit = get_audit_trail()
+            audit = get_audit_backend()
             audit.log_prediction(
                 request_id=request_id,
                 input_hash=input_hash,
@@ -2043,6 +2146,18 @@ async def predict_structure(
                 }
             )
 
+        # Shadow deployment: async fire-and-forget comparison
+        try:
+            from cathode_screening.inference.shadow import get_shadow_runner
+            shadow = get_shadow_runner()
+            if shadow is not None:
+                # Re-parse structure for shadow (production path already consumed it)
+                await cif_file.seek(0)
+                shadow_structure = await _parse_structure(cif_file)
+                shadow.submit_shadow(shadow_structure, result.material_id, result.to_dict())
+        except Exception:
+            pass  # Shadow must never affect production
+
         # Build cathode properties if available
         cathode_props = None
         if result.cathode_properties:
@@ -2064,7 +2179,7 @@ async def predict_structure(
                 cathode_properties=cathode_props,
             ),
         )
-        
+
     except HTTPException as exc:
         if metrics is not None:
             metrics.record_error()
@@ -2258,6 +2373,233 @@ async def predict_batch(
         n_processed=len(predictions),
         n_errors=n_errors,
     )
+
+
+# ---------------------------------------------------------------------------
+# Async Job Endpoints (Celery-backed)
+# ---------------------------------------------------------------------------
+
+class AsyncPredictBody(BaseModel):
+    """Request body for async prediction jobs."""
+    cif_contents: List[str] = Field(..., min_length=1, max_length=100)
+    material_ids: Optional[List[str]] = None
+
+
+class AsyncJobResponse(BaseModel):
+    """Response for async job submission."""
+    success: bool
+    job_id: str
+    status: str = "queued"
+    message: str = ""
+
+
+class AsyncJobStatusResponse(BaseModel):
+    """Response for async job status check."""
+    success: bool
+    job_id: str
+    status: str
+    result: Optional[dict] = None
+
+
+@app.post("/predict/async", response_model=AsyncJobResponse)
+async def predict_async(
+    request: Request,
+    body: AsyncPredictBody,
+    api_key: str = Security(get_api_key),
+):
+    """Submit an async batch prediction job via Celery.
+
+    Returns a job_id that can be polled via GET /predict/async/{job_id}.
+    Requires CATHODE_REDIS_URL to be configured and a Celery worker running.
+    """
+    request_id = getattr(request.state, "request_id", uuid.uuid4().hex)
+    _enforce_rate_limit(request, cost=len(body.cif_contents))
+
+    try:
+        from cathode_screening.queue.tasks import predict_batch_task
+
+        result = predict_batch_task.apply_async(
+            kwargs={
+                "cif_contents": body.cif_contents,
+                "material_ids": body.material_ids,
+            },
+            task_id=request_id,
+        )
+        return AsyncJobResponse(
+            success=True,
+            job_id=result.id,
+            status="queued",
+            message=f"Job queued with {len(body.cif_contents)} structures",
+        )
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Async predictions require Celery + Redis. "
+                   "Set CATHODE_REDIS_URL and start a worker.",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to queue async job: {exc}",
+        )
+
+
+@app.get("/predict/async/{job_id}", response_model=AsyncJobStatusResponse)
+async def get_async_prediction_status(
+    job_id: str,
+    api_key: str = Security(get_api_key),
+):
+    """Check the status of an async prediction job."""
+    try:
+        from cathode_screening.queue.celery_app import celery_app
+
+        result = celery_app.AsyncResult(job_id)
+
+        if result.state == "PENDING":
+            return AsyncJobStatusResponse(
+                success=True, job_id=job_id, status="pending"
+            )
+        elif result.state == "STARTED":
+            return AsyncJobStatusResponse(
+                success=True, job_id=job_id, status="running"
+            )
+        elif result.state == "SUCCESS":
+            return AsyncJobStatusResponse(
+                success=True, job_id=job_id, status="completed",
+                result=result.result,
+            )
+        elif result.state == "FAILURE":
+            return AsyncJobStatusResponse(
+                success=False, job_id=job_id, status="failed",
+                result={"error": str(result.result)},
+            )
+        else:
+            return AsyncJobStatusResponse(
+                success=True, job_id=job_id, status=result.state.lower()
+            )
+
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Async job status requires Celery. Set CATHODE_REDIS_URL.",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Shadow Deployment & Batcher Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/shadow/stats")
+async def get_shadow_stats(api_key: str = Security(get_api_key)):
+    """Get shadow deployment comparison statistics."""
+    try:
+        from cathode_screening.inference.shadow import get_shadow_runner
+        runner = get_shadow_runner()
+        if runner is None:
+            return {"enabled": False, "message": "Shadow deployment not enabled"}
+        return {"enabled": True, **runner.stats()}
+    except Exception as exc:
+        return {"enabled": False, "error": str(exc)}
+
+
+@app.get("/shadow/analysis")
+async def get_shadow_analysis(
+    days: int = 7,
+    api_key: str = Security(get_api_key),
+):
+    """Analyze shadow deployment logs for promotion readiness."""
+    try:
+        from cathode_screening.inference.shadow import get_shadow_runner
+        runner = get_shadow_runner()
+        if runner is None:
+            return {"enabled": False, "message": "Shadow deployment not enabled"}
+        return runner.analyze_logs(days=days)
+    except Exception as exc:
+        return {"enabled": False, "error": str(exc)}
+
+
+@app.get("/batcher/stats")
+async def get_batcher_stats(api_key: str = Security(get_api_key)):
+    """Get GPU dynamic batcher statistics."""
+    try:
+        from cathode_screening.inference.gpu_batcher import get_batcher
+        batcher = get_batcher()
+        if batcher is None:
+            return {"enabled": False, "message": "Dynamic batching not enabled"}
+        return {"enabled": True, **batcher.stats()}
+    except Exception as exc:
+        return {"enabled": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Model Registry Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/registry/models")
+async def list_registry_models(
+    stage: Optional[str] = None,
+    api_key: str = Security(get_api_key),
+):
+    """List registered model versions."""
+    try:
+        from cathode_screening.registry.model_registry import get_registry
+        registry = get_registry()
+        versions = registry.list_versions(stage=stage)
+        return {
+            "success": True,
+            "models": [v.to_dict() for v in versions],
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@app.get("/registry/production")
+async def get_production_model(api_key: str = Security(get_api_key)):
+    """Get the current production model from the registry."""
+    try:
+        from cathode_screening.registry.model_registry import get_registry
+        registry = get_registry()
+        model = registry.get_production()
+        if model is None:
+            return {"success": True, "model": None, "message": "No production model registered"}
+        return {"success": True, "model": model.to_dict()}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Enterprise auth endpoints (RBAC info, tenant info, SSO)
+# ---------------------------------------------------------------------------
+if _HAS_ENTERPRISE_AUTH:
+    @app.get("/auth/info")
+    async def auth_info(api_key=Security(get_api_key)):
+        """Return the caller's identity, role, and tenant context."""
+        info = {"rbac_enabled": is_rbac_enabled(), "multi_tenant": is_multi_tenant()}
+        if is_rbac_enabled() and isinstance(api_key, Identity):
+            info["identity"] = {
+                "key_id": api_key.key_id,
+                "role": api_key.role.value,
+                "org_id": api_key.org_id,
+                "permissions": sorted(api_key.permissions),
+            }
+        return info
+
+    # Mount SSO routes if configured
+    try:
+        mount_sso_routes(app)
+    except Exception as exc:
+        logger.warning("Failed to mount SSO routes: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# API Versioning — mount /v1/ prefixed routes
+# ---------------------------------------------------------------------------
+try:
+    from web.api.v1.router import mount_v1_routes
+    mount_v1_routes(app)
+    logger.info("API v1 routes mounted at /v1/")
+except Exception as exc:
+    logger.warning("Failed to mount v1 routes: %s", exc)
 
 
 if __name__ == "__main__":
