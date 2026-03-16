@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-16
+
+### Added
+- **Production active learning loop**: Closed-loop system connecting MAYBE predictions to DFT/experimental validation, ground-truth feedback ingestion, and automatic retrain triggering. New module `active_learning/production_loop.py` with `FeedbackIngester`, `ProductionALOrchestrator`, and `FeedbackPool`. Endpoints: `POST /feedback`, `GET /active-learning/status`.
+- **Multi-chemistry support**: Screening extended beyond Li-ion to Na-ion, solid-state electrolytes, and Li-S cathodes. Each chemistry has dedicated composition guardrails, voltage lookup tables, and stability thresholds. Auto-detection from structure composition. Endpoints: `GET /chemistry/supported`, `POST /chemistry/detect`.
+- **Composition-only fast triage**: Sub-millisecond formula screening (no CIF or ML model required) using empirical rules, stoichiometry validation, and voltage/capacity estimates. Supports batch triage of millions of compositions. Endpoint: `POST /triage`.
+- **LIMS integration**: Bidirectional integration with laboratory information management systems. Adapters for LabWare, Benchling, and generic webhook LIMS. Inbound webhooks feed DFT/experimental results into the active learning loop. Outbound pushes screening results to LIMS for sample tracking. Endpoints: `POST /lims/webhook`, `GET /lims/status`.
+- **OPTIMADE API compatibility**: Implements OPTIMADE v1.1 specification for interoperability with Materials Project, AFLOW, NOMAD, and other materials databases. Filter parser supports `HAS`, comparison operators, and CathodeScreen custom properties (`_cathode_decision`, `_cathode_ehull_pred`). Endpoints: `GET /optimade/v1/info`, `GET /optimade/v1/structures`, `GET /optimade/v1/info/structures`.
+
+### Changed
+- `pyproject.toml` version bumped to 1.4.0.
+- `.ci/empty-file-allowlist.txt` updated for new package init files.
+
+## [1.3.0] - 2026-03-16
+
+### Added
+- **RBAC (Role-Based Access Control)**: Three-tier role system (viewer, operator, admin) with fine-grained permissions replacing flat API keys. Backward compatible — existing keys default to `operator` role. Configured via `CATHODE_RBAC_ENABLED`, `CATHODE_RBAC_KEYS_FILE`.
+- **Multi-tenancy**: Organization-level data isolation via `X-Tenant-ID` header and per-key `org_id` binding. Admin keys can act across tenants (super-admin). Configured via `CATHODE_MULTI_TENANT`.
+- **SSO/SAML/OIDC integration**: Enterprise single sign-on support with SAML 2.0 and OpenID Connect. JWT session tokens with configurable role mapping from IdP groups. Routes: `/auth/sso/login`, `/auth/sso/callback/*`, `/auth/sso/metadata`.
+- **Auth info endpoint**: `GET /auth/info` returns caller identity, role, and tenant context.
+- **Kubernetes deployment**: Full Kustomize-based manifests under `deploy/k8s/` with base, staging, and production overlays. Includes Deployments, Services, HPA auto-scaling, Ingress, NetworkPolicies, PodDisruptionBudgets, and PVCs.
+- **HPA auto-scaling**: Backend (2-10 pods), Celery workers (1-8 pods), and frontend (2-6 pods) with CPU/memory-based scaling and stabilization windows.
+- **Python SDK enhancements**: `AsyncCathodeClient` for async/await usage, `predict_and_wait()` for blocking async prediction polling, registry and audit access methods, multi-tenant `org_id` support.
+- **ISO 9001 quality management documentation**: Full QMS document (CS-QMS-001) covering quality policy, risk assessment, control plans, and CAPA process.
+- **IATF 16949 automotive supplement**: Automotive-specific compliance document with MSA analysis, control plans, PPAP evidence mapping, and 8D problem-solving alignment.
+
+### Changed
+- `web/api/main.py`: `get_api_key` now returns `Identity` objects when RBAC is enabled; added `require_permission()` dependency factory.
+- `sdk/cathode_screen/client.py`: Added `api_version` and `org_id` parameters, automatic retry transport, enterprise methods.
+- `sdk/pyproject.toml`: Version bumped to 1.3.0.
+- `pyproject.toml`: Version bumped to 1.3.0.
+
+### Dependencies
+- Added optional `[sso]` dependency group: `pyjwt>=2.8` (optional, fallback to HMAC)
+
 ## [1.2.0] - 2026-03-16
 
 ### Added
@@ -81,7 +116,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - KEEP precision: 92.7%
 - False-kill rate: 0.0%
 
-[Unreleased]: https://github.com/your-org/cathode-screening/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/your-org/cathode-screening/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/your-org/cathode-screening/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/your-org/cathode-screening/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/your-org/cathode-screening/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/your-org/cathode-screening/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/your-org/cathode-screening/releases/tag/v1.0.0

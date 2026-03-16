@@ -776,7 +776,7 @@ def require_permission(permission_value: str):
 app = FastAPI(
     title="CathodeScreen API",
     description="AI-powered screening of battery cathode materials",
-    version="1.2.0",
+    version="1.4.0",
 )
 
 def _setup_otel() -> None:
@@ -2589,6 +2589,252 @@ if _HAS_ENTERPRISE_AUTH:
         mount_sso_routes(app)
     except Exception as exc:
         logger.warning("Failed to mount SSO routes: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Active Learning, Multi-Chemistry, Fast Triage, LIMS, OPTIMADE
+# ---------------------------------------------------------------------------
+
+@app.post("/feedback")
+async def submit_feedback(
+    request: Request,
+    api_key=Security(get_api_key),
+):
+    """Submit ground-truth DFT/experimental feedback for active learning.
+
+    Body JSON::
+
+        {
+            "material_id": "mp-12345",
+            "ehull_true": 0.023,
+            "source": "dft",
+            "source_id": "vasp-job-42"
+        }
+
+    Or batch::
+
+        {
+            "records": [
+                {"material_id": "mp-12345", "ehull_true": 0.023, "source": "dft"},
+                ...
+            ]
+        }
+    """
+    try:
+        from cathode_screening.active_learning.production_loop import FeedbackIngester
+        body = await request.json()
+        ingester = FeedbackIngester()
+
+        if "records" in body:
+            result = ingester.ingest_batch(body["records"])
+            return {"success": True, **result}
+        else:
+            is_new = ingester.ingest_single(
+                material_id=body["material_id"],
+                ehull_true=float(body["ehull_true"]),
+                source=body.get("source", "api"),
+                source_id=body.get("source_id"),
+                metadata=body.get("metadata", {}),
+            )
+            return {"success": True, "new": is_new}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/active-learning/status")
+async def al_status(api_key=Security(get_api_key)):
+    """Get production active learning loop status."""
+    try:
+        from cathode_screening.active_learning.production_loop import (
+            ProductionALOrchestrator,
+        )
+        orchestrator = ProductionALOrchestrator()
+        return orchestrator.get_status()
+    except Exception as exc:
+        return {"enabled": False, "error": str(exc)}
+
+
+@app.post("/triage")
+async def fast_triage(
+    request: Request,
+    api_key=Security(get_api_key),
+):
+    """Fast composition-only triage (sub-millisecond, no CIF required).
+
+    Body JSON::
+
+        {"formula": "LiCoO2"}
+
+    Or batch::
+
+        {"formulas": ["LiCoO2", "LiMn2O4", "NaCl"]}
+
+    Optional: ``"carrier_ion": "Na"`` for Na-ion screening.
+    """
+    try:
+        from cathode_screening.inference.fast_triage import (
+            triage_formula,
+            triage_batch,
+        )
+        body = await request.json()
+        carrier_ion = body.get("carrier_ion", "Li")
+
+        if "formulas" in body:
+            results = triage_batch(body["formulas"], carrier_ion)
+            return {
+                "success": True,
+                "results": [r.to_dict() for r in results],
+                "total": len(results),
+                "pass": sum(1 for r in results if r.decision == "PASS"),
+                "maybe": sum(1 for r in results if r.decision == "MAYBE"),
+                "fail": sum(1 for r in results if r.decision == "FAIL"),
+            }
+        else:
+            result = triage_formula(body["formula"], carrier_ion)
+            return {"success": True, **result.to_dict()}
+    except KeyError:
+        raise HTTPException(
+            status_code=400,
+            detail="Request must include 'formula' or 'formulas'",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/chemistry/supported")
+async def list_chemistries(api_key=Security(get_api_key)):
+    """List supported battery chemistries."""
+    try:
+        from cathode_screening.inference.multi_chemistry import (
+            list_supported_chemistries,
+        )
+        return {"success": True, "chemistries": list_supported_chemistries()}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@app.post("/chemistry/detect")
+async def detect_chemistry_endpoint(
+    request: Request,
+    cif_file: UploadFile = File(...),
+    api_key=Security(get_api_key),
+):
+    """Auto-detect the most likely battery chemistry from a CIF structure."""
+    try:
+        from cathode_screening.inference.multi_chemistry import (
+            detect_chemistry,
+            evaluate_composition,
+        )
+        content = await cif_file.read()
+        with tempfile.NamedTemporaryFile(suffix=".cif", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            from pymatgen.core import Structure
+            structure = Structure.from_file(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+
+        chemistry = detect_chemistry(structure)
+        check = evaluate_composition(structure, chemistry)
+        return {
+            "success": True,
+            "detected_chemistry": chemistry.name,
+            "display_name": chemistry.display_name,
+            "carrier_ion": chemistry.carrier_ion,
+            "stability_threshold": chemistry.stability_threshold,
+            "composition_check": {
+                "formula": check.formula,
+                "is_valid": check.is_valid,
+                "elements": list(check.elements),
+                "transition_metals": list(check.transition_metals),
+                "anion_framework": check.anion_framework,
+                "reasons": list(check.reasons),
+            },
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/lims/webhook")
+async def lims_webhook(request: Request):
+    """Receive experimental results from LIMS webhook.
+
+    Validates the webhook signature, parses sample results, and feeds
+    them into the active learning feedback loop.
+    """
+    try:
+        from cathode_screening.integrations.lims import (
+            get_lims_adapter,
+            is_lims_enabled,
+        )
+        if not is_lims_enabled():
+            raise HTTPException(
+                status_code=503,
+                detail="LIMS integration is not enabled",
+            )
+        adapter = get_lims_adapter()
+        body = await request.body()
+        headers = dict(request.headers)
+
+        if not adapter.validate_webhook(body, headers):
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid LIMS webhook signature",
+            )
+
+        samples = adapter.parse_webhook(body, headers)
+        if not samples:
+            return {"success": True, "samples_received": 0}
+
+        # Feed into active learning
+        try:
+            from cathode_screening.active_learning.production_loop import FeedbackIngester
+            ingester = FeedbackIngester()
+            records = [
+                {
+                    "material_id": s.material_id,
+                    "ehull_true": s.ehull_measured or 0.0,
+                    "source": "lims",
+                    "source_id": s.sample_id,
+                    "metadata": {"batch_id": s.batch_id, "test_method": s.test_method},
+                }
+                for s in samples
+                if s.ehull_measured is not None
+            ]
+            if records:
+                result = ingester.ingest_batch(records)
+                return {
+                    "success": True,
+                    "samples_received": len(samples),
+                    "feedback_ingested": result,
+                }
+        except ImportError:
+            pass
+
+        return {"success": True, "samples_received": len(samples)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/lims/status")
+async def lims_status(api_key=Security(get_api_key)):
+    """Get LIMS integration status."""
+    try:
+        from cathode_screening.integrations.lims import is_lims_enabled
+        return {"enabled": is_lims_enabled()}
+    except Exception:
+        return {"enabled": False}
+
+
+# Mount OPTIMADE routes
+try:
+    from cathode_screening.integrations.optimade import mount_optimade_routes
+    mount_optimade_routes(app)
+except Exception as exc:
+    logger.warning("Failed to mount OPTIMADE routes: %s", exc)
 
 
 # ---------------------------------------------------------------------------

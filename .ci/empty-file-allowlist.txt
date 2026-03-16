@@ -40,6 +40,10 @@ src/cathode_screening/training/callbacks.py
 src/cathode_screening/training/checkpoints.py
 src/cathode_screening/training/optim.py
 src/cathode_screening/training/trainer.py
+src/cathode_screening/queue/__init__.py
+src/cathode_screening/registry/__init__.py
 src/cathode_screening/training/wandb.py
+tests/__init__.py
+tests/integration/__init__.py
 tmp_008.status_.gstmp
 uv.lock
