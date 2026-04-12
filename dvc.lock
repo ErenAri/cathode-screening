@@ -83,3 +83,137 @@ stages:
       hash: md5
       md5: ba44da791885bea8754bd8f7fcae3c02
       size: 1278
+  fetch:
+    cmd: python scripts/00_fetch_mp.py --config configs/dataset_mp.yaml
+    deps:
+    - path: configs/dataset_mp.yaml
+      hash: md5
+      md5: 2c8d3690b95dd6dfb6e7d84c33142ea6
+      size: 1425
+    - path: scripts/00_fetch_mp.py
+      hash: md5
+      md5: d401f923e4ab81269f0a0d4e31786a74
+      size: 2943
+    params:
+      configs/dataset_mp.yaml:
+        dataset:
+          name: mp_cathodes_v1
+          raw_dir: data/raw/mp
+          interim_dir: data/interim/mp
+          processed_dir: data/processed/mp
+          splits_dir: data/splits/mp
+          reports_dir: data/reports/mp
+        filters:
+          require_elements:
+          - Li
+          - O
+          require_any_transition_metals:
+          - Fe
+          - Mn
+          - Co
+          - Ni
+          - Ti
+          - V
+          - Cr
+          exclude_elements:
+          - F
+          - Cl
+          - Br
+          - I
+          - S
+          - Se
+          min_atoms: 5
+          max_atoms: 80
+          require_3d_periodic: true
+          allow_partial_occupancy: false
+        mp:
+          api_key_env: MP_API_KEY
+          base_url: https://api.materialsproject.org/
+          timeout_sec: 60
+          max_retries: 5
+          page_size: 500
+    outs:
+    - path: data/raw/mp/raw_mp_cathodes_v1.parquet
+      hash: md5
+      md5: 677ee1831ea63c9d2965577b52f2caaf
+      size: 18636967
+  cache_structures:
+    cmd: python scripts/02b_cache_structures.py --config configs/dataset_mp.yaml
+    deps:
+    - path: data/raw/mp/raw_mp_cathodes_v1.parquet
+      hash: md5
+      md5: 677ee1831ea63c9d2965577b52f2caaf
+      size: 18636967
+    - path: scripts/02b_cache_structures.py
+      hash: md5
+      md5: f155a16bf5e57a332d81961c990eba54
+      size: 3389
+    outs:
+    - path: data/processed/mp/structures/
+      hash: md5
+      md5: ea98f115c863574b55a3e6250f3c1881.dir
+      size: 16773422
+      nfiles: 11378
+  build_graphs:
+    cmd: python scripts/02_build_graph_cache.py --config configs/dataset_mp.yaml
+    deps:
+    - path: data/raw/mp/raw_mp_cathodes_v1.parquet
+      hash: md5
+      md5: 677ee1831ea63c9d2965577b52f2caaf
+      size: 18636967
+    - path: scripts/02_build_graph_cache.py
+      hash: md5
+      md5: 5092805ba7212374bd95f98da85d91ca
+      size: 10533
+    params:
+      configs/dataset_mp.yaml:
+        graph:
+          neighbor_cutoff_angstrom: 8.0
+          max_neighbors: 12
+          rbf_bins: 41
+          rbf_gamma: 10.0
+          use_voronoi_features: false
+          use_angle_features: false
+          cache_format: parquet
+          cache_key: cif_hash
+    outs:
+    - path: data/interim/mp/graphs/
+      hash: md5
+      md5: 49bfa16075f7cdf70838015cf2d49ed1.dir
+      size: 345366141
+      nfiles: 11377
+    - path: data/processed/mp/processed_mp_cathodes_v1.parquet
+      hash: md5
+      md5: e2dc550f4c66349a9b6dcece69a6664a
+      size: 656138
+  make_splits:
+    cmd: python scripts/03a_make_soap_loco_splits.py
+    deps:
+    - path: data/processed/mp/processed_mp_cathodes_v1.parquet
+      hash: md5
+      md5: e2dc550f4c66349a9b6dcece69a6664a
+      size: 656138
+    - path: scripts/03a_make_soap_loco_splits.py
+      hash: md5
+      md5: 83c3778af681e3d5e1d2a334169894d1
+      size: 8253
+    params:
+      configs/dataset_mp.yaml:
+        splits:
+          method: chemistry_cluster
+          train_frac: 0.7
+          val_frac: 0.15
+          test_frac: 0.15
+          random_seed: 42
+          clustering:
+            fingerprint: composition
+            n_clusters: 200
+            min_cluster_size: 50
+          leakage_checks:
+            enforce_no_shared_cif_hash: true
+            enforce_no_shared_cluster_id: true
+    outs:
+    - path: data/splits/mp/splits_mp_cathodes_v1_soap-loco.json
+      hash: md5
+      md5: 038105a7e0b99526eb5e6fc1c197fe7e
+      size: 315058

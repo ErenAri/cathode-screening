@@ -1,0 +1,64 @@
+{
+  "ehull_bin": {
+    "unstable": {
+      "n_samples": 44,
+      "n_stable": 0,
+      "stable_frac": 0.0,
+      "n_keep": 0,
+      "n_maybe": 44,
+      "n_kill": 0,
+      "fn_rate": 0.0,
+      "fp_rate": 0.0,
+      "expected_cost": 44.0,
+      "cost_per_sample": 1.0
+    },
+    "highly_stable": {
+      "n_samples": 132,
+      "n_stable": 132,
+      "stable_frac": 1.0,
+      "n_keep": 0,
+      "n_maybe": 132,
+      "n_kill": 0,
+      "fn_rate": 0.0,
+      "fp_rate": 0.0,
+      "expected_cost": 132.0,
+      "cost_per_sample": 1.0
+    },
+    "stable": {
+      "n_samples": 256,
+      "n_stable": 256,
+      "stable_frac": 1.0,
+      "n_keep": 0,
+      "n_maybe": 256,
+      "n_kill": 0,
+      "fn_rate": 0.0,
+      "fp_rate": 0.0,
+      "expected_cost": 256.0,
+      "cost_per_sample": 1.0
+    },
+    "metastable": {
+      "n_samples": 302,
+      "n_stable": 0,
+      "stable_frac": 0.0,
+      "n_keep": 0,
+      "n_maybe": 302,
+      "n_kill": 0,
+      "fn_rate": 0.0,
+      "fp_rate": 0.0,
+      "expected_cost": 302.0,
+      "cost_per_sample": 1.0
+    },
+    "marginal": {
+      "n_samples": 30,
+      "n_stable": 0,
+      "stable_frac": 0.0,
+      "n_keep": 0,
+      "n_maybe": 30,
+      "n_kill": 0,
+      "fn_rate": 0.0,
+      "fp_rate": 0.0,
+      "expected_cost": 30.0,
+      "cost_per_sample": 1.0
+    }
+  }
+}

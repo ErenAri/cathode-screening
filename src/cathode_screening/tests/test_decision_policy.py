@@ -89,10 +89,13 @@ class TestDecisionPolicy:
     def test_kill_decision(self, dft_policy):
         """Should KILL when q10 is high and epistemic uncertainty is low."""
         # Even optimistic bound is unstable, ensemble agrees
+        # DFT mode requires cluster calibration for KILL (safety gate),
+        # so we pass is_cluster_calibrated=True to satisfy all KILL conditions.
         decision = dft_policy.decide(
             q10_cal=0.18, q50=0.25, q90_cal=0.35,
             p_stable=0.1, gate_level="IN",
-            epistemic_std=0.02  # Low uncertainty = ensemble agrees
+            epistemic_std=0.02,  # Low uncertainty = ensemble agrees
+            is_cluster_calibrated=True,
         )
         assert decision == "KILL"
     

@@ -55,7 +55,7 @@ class TestConformalCalibration:
             f"Coverage {coverage:.3f} < {target - tolerance:.3f} "
             f"(target: {target:.2f}, tolerance: {tolerance:.2f})"
         )
-        print(f"✓ Conformal coverage: {coverage:.3f} (target: {target:.2f})")
+        print(f"[OK] Conformal coverage: {coverage:.3f} (target: {target:.2f})")
     
     def test_coverage_by_predicted_value(
         self,
@@ -89,7 +89,7 @@ class TestConformalCalibration:
                 f"{bin_coverage:.3f} < {min_coverage}"
             )
         
-        print(f"✓ Coverage by predicted value: all bins ≥ {min_coverage}")
+        print(f"[OK] Coverage by predicted value: all bins ≥ {min_coverage}")
     
     def test_interval_sharpness(
         self,
@@ -116,7 +116,7 @@ class TestConformalCalibration:
             f"P95 interval width {p95_width:.3f} > {max_p95_width} eV"
         )
         
-        print(f"✓ Interval sharpness: median={median_width:.3f}, p95={p95_width:.3f}")
+        print(f"[OK] Interval sharpness: median={median_width:.3f}, p95={p95_width:.3f}")
 
 
 class TestDecisionQuality:
@@ -145,7 +145,7 @@ class TestDecisionQuality:
             f"KEEP precision {precision:.3f} < {min_precision} for DFT mode"
         )
         
-        print(f"✓ KEEP precision (DFT): {precision:.3f} (n={keep_mask.sum()})")
+        print(f"[OK] KEEP precision (DFT): {precision:.3f} (n={keep_mask.sum()})")
     
     def test_keep_precision_experimental_mode(
         self,
@@ -169,7 +169,7 @@ class TestDecisionQuality:
             f"KEEP precision {precision:.3f} < {min_precision} for experimental mode"
         )
         
-        print(f"✓ KEEP precision (Experimental): {precision:.3f}")
+        print(f"[OK] KEEP precision (Experimental): {precision:.3f}")
     
     def test_kill_precision(
         self,
@@ -194,7 +194,7 @@ class TestDecisionQuality:
             f"KILL precision {precision:.3f} < {min_precision}"
         )
         
-        print(f"✓ KILL precision: {precision:.3f} (n={kill_mask.sum()})")
+        print(f"[OK] KILL precision: {precision:.3f} (n={kill_mask.sum()})")
     
     def test_decision_coverage(
         self,
@@ -223,7 +223,7 @@ class TestDecisionQuality:
             f"KILL rate {kill_rate:.1%} > {max_kill_rate:.0%}. Too aggressive."
         )
         
-        print(f"✓ Decision distribution: KEEP={n_keep/n:.1%}, MAYBE={n_maybe/n:.1%}, KILL={n_kill/n:.1%}")
+        print(f"[OK] Decision distribution: KEEP={n_keep/n:.1%}, MAYBE={n_maybe/n:.1%}, KILL={n_kill/n:.1%}")
     
     def test_no_stable_compounds_killed(
         self,
@@ -251,7 +251,7 @@ class TestDecisionQuality:
             f"Killed {n_stable_killed}/{n_stable} stable compounds!"
         )
         
-        print(f"✓ Stable KILL rate: {stable_kill_rate:.1%} ({n_stable_killed}/{n_stable})")
+        print(f"[OK] Stable KILL rate: {stable_kill_rate:.1%} ({n_stable_killed}/{n_stable})")
 
 
 class TestOODDetection:
@@ -274,7 +274,7 @@ class TestOODDetection:
             f"(expected {min_ratio}x separation)"
         )
         
-        print(f"✓ OOD separation: ID={id_median:.3f}, OOD={ood_median:.3f}")
+        print(f"[OK] OOD separation: ID={id_median:.3f}, OOD={ood_median:.3f}")
     
     def test_ood_detection_auc(
         self,
@@ -294,7 +294,7 @@ class TestOODDetection:
         
         assert auc >= min_auc, f"OOD detection AUC {auc:.3f} < {min_auc}"
         
-        print(f"✓ OOD detection AUC: {auc:.3f}")
+        print(f"[OK] OOD detection AUC: {auc:.3f}")
     
     def test_ood_forces_maybe(
         self,
@@ -311,7 +311,7 @@ class TestOODDetection:
                 )
         
         n_flagged = sum(ood_flags)
-        print(f"✓ All {n_flagged} OOD-flagged samples routed to MAYBE")
+        print(f"[OK] All {n_flagged} OOD-flagged samples routed to MAYBE")
     
     def test_composition_gate_on_novel_elements(
         self,
@@ -329,7 +329,7 @@ class TestOODDetection:
                 f"Novel element formula {formula} not flagged: d_comp={result.d_comp:.2f}"
             )
         
-        print(f"✓ {len(novel_element_formulas)} novel element formulas correctly flagged")
+        print(f"[OK] {len(novel_element_formulas)} novel element formulas correctly flagged")
 
 
 class TestEnsembleConsistency:
@@ -353,7 +353,7 @@ class TestEnsembleConsistency:
             f"Ensemble improvement {improvement:.1%} < {min_improvement:.0%}"
         )
         
-        print(f"✓ Ensemble MAE improvement: {improvement:.1%} ({single_mae:.4f} → {ensemble_mae:.4f})")
+        print(f"[OK] Ensemble MAE improvement: {improvement:.1%} ({single_mae:.4f} → {ensemble_mae:.4f})")
     
     def test_epistemic_correlates_with_error(
         self,
@@ -372,7 +372,7 @@ class TestEnsembleConsistency:
             f"Epistemic-error correlation {corr:.3f} < {min_correlation}"
         )
         
-        print(f"✓ Epistemic-error Spearman correlation: {corr:.3f} (p={pval:.2e})")
+        print(f"[OK] Epistemic-error Spearman correlation: {corr:.3f} (p={pval:.2e})")
     
     def test_ensemble_members_diverse(
         self,
@@ -395,7 +395,7 @@ class TestEnsembleConsistency:
             f"Ensemble members too similar."
         )
         
-        print(f"✓ Ensemble diversity: median disagreement = {median_disagreement:.4f}")
+        print(f"[OK] Ensemble diversity: median disagreement = {median_disagreement:.4f}")
     
     def test_no_outlier_member(
         self,
@@ -419,7 +419,7 @@ class TestEnsembleConsistency:
                 f"Member {k} is outlier: MAE={mae:.4f}, z-score={zscore:.2f}"
             )
         
-        print(f"✓ No outlier members (MAEs: {[f'{m:.4f}' for m in member_maes]})")
+        print(f"[OK] No outlier members (MAEs: {[f'{m:.4f}' for m in member_maes]})")
 
 
 class TestEndToEnd:
@@ -449,7 +449,7 @@ class TestEndToEnd:
         assert 0 <= result.decision_confidence <= 1.0
         assert result.uncertainty_total >= 0
         
-        print(f"✓ Valid output: {result.decision} (conf={result.decision_confidence:.2f})")
+        print(f"[OK] Valid output: {result.decision} (conf={result.decision_confidence:.2f})")
     
     def test_batch_prediction_consistent(
         self,
@@ -472,7 +472,7 @@ class TestEndToEnd:
             assert ind.decision == bat.decision, f"Decision mismatch at {i}"
             assert abs(ind.ehull_pred - bat.ehull_pred) < 1e-6, f"Prediction mismatch at {i}"
         
-        print(f"✓ Batch prediction consistent for {len(test_materials)} materials")
+        print(f"[OK] Batch prediction consistent for {len(test_materials)} materials")
     
     def test_mode_affects_thresholds(
         self,
@@ -501,7 +501,7 @@ class TestEndToEnd:
         
         # For borderline cases, experimental should be more conservative
         # (This test may not always fire depending on the sample)
-        print(f"✓ DFT decision: {dft_result.decision}, Exp decision: {exp_result.decision}")
+        print(f"[OK] DFT decision: {dft_result.decision}, Exp decision: {exp_result.decision}")
 
 
 # Fixture implementations (would be replaced with actual data loading)

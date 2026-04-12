@@ -38,8 +38,12 @@ def compute_metrics(df: pd.DataFrame, use_gated: bool = True) -> Dict[str, objec
 
     y_true = _as_array(df, "y_true")
     q50 = _as_array(df, "q50")
-    q10 = _as_array(df, "q10_cal") or _as_array(df, "q10_raw")
-    q90 = _as_array(df, "q90_cal") or _as_array(df, "q90_raw")
+    q10 = _as_array(df, "q10_cal")
+    if q10 is None:
+        q10 = _as_array(df, "q10_raw")
+    q90 = _as_array(df, "q90_cal")
+    if q90 is None:
+        q90 = _as_array(df, "q90_raw")
 
     if y_true is not None and q10 is not None and q90 is not None:
         coverage = float(np.mean((y_true >= q10) & (y_true <= q90)))
@@ -105,11 +109,27 @@ def compute_metrics(df: pd.DataFrame, use_gated: bool = True) -> Dict[str, objec
     return metrics
 
 
+def _apply_conformal_calibration(df: pd.DataFrame, params_path: Path) -> pd.DataFrame:
+    """Apply conformal calibration deltas to quantile columns."""
+    with open(params_path) as f:
+        params = json.load(f)
+    delta_lower = params["delta_lower"]
+    delta_upper = params["delta_upper"]
+
+    df = df.copy()
+    q10_col = "q10_cal" if "q10_cal" in df.columns else "q10_raw"
+    q90_col = "q90_cal" if "q90_cal" in df.columns else "q90_raw"
+    df["q10_cal"] = df[q10_col] - delta_lower
+    df["q90_cal"] = df[q90_col] + delta_upper
+    return df
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Evaluate prediction parquet files")
     ap.add_argument("--input", required=True, help="Path to predictions parquet")
     ap.add_argument("--output", help="Optional JSON output path")
     ap.add_argument("--use-gated", action="store_true", help="Use gated decisions if available")
+    ap.add_argument("--conformal-params", help="Path to conformal_params.json for calibration")
     args = ap.parse_args()
 
     path = Path(args.input)
@@ -117,6 +137,12 @@ def main() -> None:
         raise FileNotFoundError(f"Predictions file not found: {path}")
 
     df = pd.read_parquet(path)
+
+    if args.conformal_params:
+        params_path = Path(args.conformal_params)
+        if params_path.exists():
+            df = _apply_conformal_calibration(df, params_path)
+
     metrics = compute_metrics(df, use_gated=args.use_gated)
 
     output = json.dumps(metrics, indent=2, sort_keys=True)

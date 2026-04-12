@@ -2,57 +2,58 @@
 # Tracks data lineage from raw fetch → graph cache → training → calibration → release
 #
 # Usage:
-#   dvc repro           # Reproduce full pipeline
-#   dvc repro train     # Reproduce from training onward
-#   dvc dag             # View pipeline DAG
-#   dvc metrics show    # Show tracked metrics
+#   dvc repro                    # Reproduce full pipeline
+#   dvc repro train              # Reproduce from training onward
+#   dvc repro calibrate          # Re-run calibration + evaluation only
+#   dvc dag                      # View pipeline DAG
+#   dvc metrics show             # Show tracked metrics
+#
+# Prerequisites:
+#   - MP_API_KEY env var for fetch stage
+#   - GPU recommended for train stage (~2h on RTX 2060)
 
 stages:
   fetch:
-    cmd: python scripts/00_fetch_mp.py
+    cmd: python scripts/00_fetch_mp.py --config configs/dataset_mp.yaml
     deps:
       - scripts/00_fetch_mp.py
+      - configs/dataset_mp.yaml
     outs:
-      - data/raw/mp_tmo_raw.parquet:
+      - data/raw/mp/raw_mp_cathodes_v1.parquet:
           cache: true
     params:
       - configs/dataset_mp.yaml:
-          - query
-          - fields
+          - mp
+          - dataset
+          - filters
     meta:
       description: "Fetch raw TMO data from Materials Project API"
       owner: data-pipeline
-
-  filter:
-    cmd: python scripts/01_filter_cathodes.py
-    deps:
-      - scripts/01_filter_cathodes.py
-      - data/raw/mp_tmo_raw.parquet
-    outs:
-      - data/processed/mp/cathodes_filtered.parquet:
-          cache: true
-    meta:
-      description: "Filter for Li-cathode compositions"
 
   cache_structures:
     cmd: python scripts/02b_cache_structures.py
     deps:
       - scripts/02b_cache_structures.py
-      - data/processed/mp/cathodes_filtered.parquet
+      - data/raw/mp/raw_mp_cathodes_v1.parquet
     outs:
       - data/processed/mp/structures/:
           cache: true
     meta:
-      description: "Cache crystal structures as CIF files"
+      description: "Cache crystal structures as .npz files"
 
   build_graphs:
     cmd: python scripts/02_build_graph_cache.py
     deps:
       - scripts/02_build_graph_cache.py
-      - data/processed/mp/structures/
+      - data/raw/mp/raw_mp_cathodes_v1.parquet
     outs:
-      - data/cache/graph_cache/:
+      - data/processed/mp/processed_mp_cathodes_v1.parquet:
           cache: true
+      - data/interim/mp/graphs/:
+          cache: true
+    params:
+      - configs/dataset_mp.yaml:
+          - graph
     meta:
       description: "Build graph representations with RBF features"
 
@@ -60,9 +61,9 @@ stages:
     cmd: python scripts/03a_make_soap_loco_splits.py
     deps:
       - scripts/03a_make_soap_loco_splits.py
-      - data/processed/mp/cathodes_filtered.parquet
+      - data/processed/mp/processed_mp_cathodes_v1.parquet
     outs:
-      - data/splits/soap_loco/:
+      - data/splits/mp/splits_mp_cathodes_v1_soap-loco.json:
           cache: true
     params:
       - configs/dataset_mp.yaml:
@@ -71,12 +72,17 @@ stages:
       description: "Generate SOAP-LOCO cluster splits"
 
   train:
-    cmd: python scripts/04_train_ensemble.py --config configs/train_mace_ehull.yaml
+    cmd: >-
+      python scripts/04_train_ensemble.py
+      --config configs/train_mace_ehull.yaml
+      --run-id mace_ensemble_v1
+      --skip-existing
     deps:
       - scripts/04_train_ensemble.py
+      - scripts/04_train.py
       - configs/train_mace_ehull.yaml
-      - data/cache/graph_cache/
-      - data/splits/soap_loco/
+      - data/processed/mp/structures/
+      - data/splits/mp/splits_mp_cathodes_v1_soap-loco.json
     outs:
       - artifacts/models/mace_ensemble_v1/:
           cache: true
@@ -84,8 +90,8 @@ stages:
     params:
       - configs/train_mace_ehull.yaml:
           - model
-          - training
-          - ensemble
+          - train
+          - loss
     metrics:
       - data/reports/training_metrics.json:
           cache: false
@@ -93,34 +99,47 @@ stages:
       description: "Train 5-member MACE ensemble"
 
   predict:
-    cmd: python scripts/07_predict_ensemble.py
+    cmd: >-
+      python scripts/07_predict_ensemble.py
+      --ensemble-dir artifacts/models/mace_ensemble_v1
+      --data-config configs/dataset_mp.yaml
+      --split test
+      --output data/predictions/ensemble_soap_loco_test.parquet
     deps:
       - scripts/07_predict_ensemble.py
       - artifacts/models/mace_ensemble_v1/
-      - data/splits/soap_loco/
+      - data/processed/mp/processed_mp_cathodes_v1.parquet
+      - data/splits/mp/splits_mp_cathodes_v1_soap-loco.json
     outs:
       - data/predictions/ensemble_soap_loco_test.parquet:
           cache: true
     meta:
-      description: "Generate ensemble predictions on val/test/LOCO"
+      description: "Generate ensemble predictions on test split"
 
   calibrate:
-    cmd: python scripts/05b_conformal_calibrate.py
+    cmd: >-
+      python scripts/05b_conformal_calibrate.py
+      --val-predictions data/predictions/ensemble_soap_loco_test.parquet
+      --output-dir data/calibration
     deps:
       - scripts/05b_conformal_calibrate.py
       - data/predictions/ensemble_soap_loco_test.parquet
     outs:
-      - artifacts/models/mace_ensemble_v1/conformal_params.json:
+      - data/calibration/conformal_params.json:
           cache: false
     meta:
-      description: "Compute conformal calibration deltas"
+      description: "Compute conformal calibration deltas (90% coverage)"
 
   evaluate:
-    cmd: python scripts/09_evaluate_predictions.py
+    cmd: >-
+      python scripts/09_evaluate_predictions.py
+      --input data/predictions/ensemble_soap_loco_test.parquet
+      --conformal-params data/calibration/conformal_params.json
+      --output data/reports/model_validation/model_validation_report.json
     deps:
       - scripts/09_evaluate_predictions.py
       - data/predictions/ensemble_soap_loco_test.parquet
-      - artifacts/models/mace_ensemble_v1/conformal_params.json
+      - data/calibration/conformal_params.json
     metrics:
       - data/reports/model_validation/model_validation_report.json:
           cache: false
@@ -128,21 +147,31 @@ stages:
       description: "Run governance checks and generate evaluation report"
 
   generate_manifest:
-    cmd: python scripts/08_generate_artifact_manifest.py
+    cmd: >-
+      python scripts/08_generate_artifact_manifest.py
+      --artifact-dir artifacts/models/mace_ensemble_v1
+      --output data/reports/artifact_manifest.json
     deps:
       - scripts/08_generate_artifact_manifest.py
       - artifacts/models/mace_ensemble_v1/
     outs:
-      - artifacts/models/mace_ensemble_v1/manifest.json:
+      - data/reports/artifact_manifest.json:
           cache: false
     meta:
       description: "Generate signed artifact manifest"
 
   validate_release:
-    cmd: python scripts/12_validate_release.py
+    cmd: >-
+      python scripts/12_validate_release.py
+      --input data/predictions/ensemble_soap_loco_test.parquet
+      --conformal-params data/calibration/conformal_params.json
+      --output data/reports/model_validation/release_validation.json
     deps:
       - scripts/12_validate_release.py
       - data/reports/model_validation/model_validation_report.json
-      - artifacts/models/mace_ensemble_v1/manifest.json
+      - data/reports/artifact_manifest.json
+    metrics:
+      - data/reports/model_validation/release_validation.json:
+          cache: false
     meta:
       description: "Gate release on governance checks"

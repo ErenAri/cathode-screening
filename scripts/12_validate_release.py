@@ -20,7 +20,15 @@ import pandas as pd
 
 def _load_thresholds(path: Path) -> Dict[str, float]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {k: float(v) for k, v in data.items()}
+    result = {}
+    for k, v in data.items():
+        if k.startswith("_"):
+            continue
+        try:
+            result[k] = float(v)
+        except (TypeError, ValueError):
+            continue
+    return result
 
 
 def _load_eval_module() -> object:
@@ -59,6 +67,7 @@ def main() -> None:
     )
     ap.add_argument("--output", help="Optional JSON output path")
     ap.add_argument("--use-gated", action="store_true", help="Use gated decisions if available")
+    ap.add_argument("--conformal-params", help="Path to conformal_params.json for calibration")
     args = ap.parse_args()
 
     input_path = Path(args.input)
@@ -69,6 +78,16 @@ def main() -> None:
         raise FileNotFoundError(f"Thresholds file not found: {thresholds_path}")
 
     df = pd.read_parquet(input_path)
+
+    if args.conformal_params:
+        cp = Path(args.conformal_params)
+        if cp.exists():
+            params = json.loads(cp.read_text(encoding="utf-8"))
+            q10_col = "q10_cal" if "q10_cal" in df.columns else "q10_raw"
+            q90_col = "q90_cal" if "q90_cal" in df.columns else "q90_raw"
+            df = df.copy()
+            df["q10_cal"] = df[q10_col] - params["delta_lower"]
+            df["q90_cal"] = df[q90_col] + params["delta_upper"]
     thresholds = _load_thresholds(thresholds_path)
     eval_module = _load_eval_module()
     metrics = eval_module.compute_metrics(df, use_gated=args.use_gated)

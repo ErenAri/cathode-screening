@@ -1,0 +1,7 @@
+[core]
+    autostage = true
+# Remote storage (configure per-environment)
+# [remote "gcs"]
+#     url = gs://cathode-screening-data/dvc-cache
+# [remote "s3"]
+#     url = s3://cathode-screening-data/dvc-cache

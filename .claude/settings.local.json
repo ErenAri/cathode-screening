@@ -46,7 +46,18 @@
       "Bash(git commit:*)",
       "Bash(python3:*)",
       "Bash(echo:*)",
-      "Bash(npx next build:*)"
+      "Bash(npx next build:*)",
+      "Bash(dvc version:*)",
+      "Bash(pip show:*)",
+      "Bash(dvc status:*)",
+      "Bash(/tmp/analysis.txt:*)",
+      "Read(//tmp/**)",
+      "Bash(dvc dag:*)",
+      "Bash(mkdir -p data/calibration)",
+      "Bash(dvc repro:*)",
+      "Bash(dvc metrics:*)",
+      "Bash(python -c \":*)",
+      "Bash(nvidia-smi)"
     ]
   }
 }

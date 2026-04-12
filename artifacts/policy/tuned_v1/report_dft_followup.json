@@ -1,0 +1,46 @@
+{
+  "mode": "dft_followup",
+  "thresholds": {
+    "T_keep": 0.0,
+    "T_kill": 0.08,
+    "sigma_max": 0.01544497236609459,
+    "sigma_max_percentile": 20,
+    "lambda_rank": 0.5,
+    "P_keep": null,
+    "P_kill": null,
+    "allow_keep_borderline": true,
+    "allow_keep_ood": false,
+    "block_kill_ood": true,
+    "block_kill_borderline": true,
+    "require_cluster_for_kill": true,
+    "global_keep_factor": 0.8,
+    "global_sigma_factor": 0.5
+  },
+  "cost_model": {
+    "C_keep_fp": 0.5,
+    "C_kill_fn": 10.0,
+    "C_maybe": 1.0,
+    "C_keep_tp": -2.0,
+    "C_kill_tn": -0.5
+  },
+  "n_total": 764,
+  "n_keep": 0,
+  "n_maybe": 764,
+  "n_kill": 0,
+  "fn_rate": 0.0,
+  "fp_rate": 0.0,
+  "expected_cost": 764.0,
+  "cost_per_sample": 1.0,
+  "ef_at_k": {
+    "10": 1.7721649484536082,
+    "25": 1.732783505154639,
+    "50": 1.5358762886597939,
+    "100": 1.2995876288659793
+  },
+  "precision_at_k": {
+    "10": 0.9,
+    "25": 0.88,
+    "50": 0.78,
+    "100": 0.66
+  }
+}

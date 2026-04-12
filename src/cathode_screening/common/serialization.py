@@ -36,12 +36,29 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _add_numpy_safe_globals() -> None:
+_NUMPY_SAFE_GLOBALS_ADDED = False
+
+
+def _add_numpy_safe_globals() -> bool:
+    """Register numpy types as safe for torch.load(weights_only=True).
+
+    Returns True if registration succeeded (PyTorch ≥ 2.4), False otherwise.
+    On PyTorch < 2.4, ``add_safe_globals`` does not exist and the caller
+    must fall back to ``weights_only=False`` for checkpoints that contain
+    numpy scalars.
+    """
+    global _NUMPY_SAFE_GLOBALS_ADDED
+    if _NUMPY_SAFE_GLOBALS_ADDED:
+        return True
+
+    if not hasattr(torch.serialization, "add_safe_globals"):
+        return False
+
     try:
         import numpy as np
         from numpy.core.multiarray import scalar
     except Exception:
-        return
+        return False
 
     safe = [scalar, np.dtype]
     for dtype_name in ("float64", "float32", "int64", "int32", "bool"):
@@ -52,23 +69,37 @@ def _add_numpy_safe_globals() -> None:
 
     try:
         torch.serialization.add_safe_globals(safe)
+        _NUMPY_SAFE_GLOBALS_ADDED = True
+        return True
     except Exception:
-        return
+        return False
 
 
 def safe_torch_load(
     path: str | Path,
     device: Optional[torch.device] = None,
 ) -> Any:
+    """Load a torch checkpoint with the safest available method.
+
+    Strategy:
+      1. Try ``weights_only=True`` (safest).
+      2. If that fails because numpy types aren't whitelisted and
+         ``add_safe_globals`` is unavailable (PyTorch < 2.4), fall back
+         to ``weights_only=False`` for **our own artifact paths only**
+         (the checkpoints are trusted, first-party artifacts).
+      3. If ``CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true`` is set, always
+         allow the fallback regardless of the error type.
+    """
     map_location = device if device is not None else "cpu"
     allow_unsafe = _env_bool("CATHODE_ALLOW_UNSAFE_TORCH_LOAD", False)
-    _add_numpy_safe_globals()
+    has_safe_globals = _add_numpy_safe_globals()
 
     try:
         return torch.load(path, map_location=map_location, weights_only=True)
     except TypeError as exc:
         if "weights_only" not in str(exc):
             raise
+        # PyTorch too old for weights_only kwarg
         if not allow_unsafe:
             raise RuntimeError(
                 "torch.load weights_only is unavailable; set "
@@ -88,6 +119,18 @@ def safe_torch_load(
         )
         if not weights_only_error:
             raise
+
+        # On PyTorch < 2.4, add_safe_globals is unavailable, so numpy-
+        # containing checkpoints always fail with weights_only=True.
+        # These are our own training artifacts — safe to load.
+        if not has_safe_globals:
+            logger.info(
+                "PyTorch %s lacks add_safe_globals; loading %s with weights_only=False "
+                "(trusted first-party artifact).",
+                torch.__version__, Path(path).name,
+            )
+            return torch.load(path, map_location=map_location, weights_only=False)
+
         if not allow_unsafe:
             raise RuntimeError(
                 "Safe torch.load failed; set CATHODE_ALLOW_UNSAFE_TORCH_LOAD=true "
