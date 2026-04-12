@@ -17,6 +17,18 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade",
 ]);
 
+const BLOCKED_REQUEST_HEADERS = new Set([
+  ...HOP_BY_HOP_HEADERS,
+  // Let the server runtime negotiate upstream encoding to avoid
+  // forwarding a compressed response header for an already decoded body.
+  "accept-encoding",
+]);
+
+const BLOCKED_RESPONSE_HEADERS = new Set([
+  ...HOP_BY_HOP_HEADERS,
+  "content-encoding",
+]);
+
 function _resolveBackendApiKey(): string | undefined {
   const key =
     process.env.CATHODE_API_KEY ||
@@ -40,7 +52,7 @@ function _forwardHeaders(request: NextRequest): Headers {
   const headers = new Headers();
   request.headers.forEach((value, key) => {
     const lower = key.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lower)) {
+    if (BLOCKED_REQUEST_HEADERS.has(lower)) {
       return;
     }
     headers.set(key, value);
@@ -56,7 +68,7 @@ function _forwardHeaders(request: NextRequest): Headers {
 function _responseHeaders(upstream: Response): Headers {
   const headers = new Headers();
   upstream.headers.forEach((value, key) => {
-    if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+    if (!BLOCKED_RESPONSE_HEADERS.has(key.toLowerCase())) {
       headers.set(key, value);
     }
   });
