@@ -15,7 +15,7 @@ data:
   dataset_name: mp_cathodes_v1
   processed_dir: data/processed/mp
   structure_dir: data/processed/mp/structures   # <-- MACE-specific
-  splits_manifest: data/splits/mp/splits_mp_cathodes_v1.json
+  splits_manifest: data/splits/mp/splits_mp_cathodes_v1_soap-loco.json
   target:
     name: energy_above_hull
     type: regression

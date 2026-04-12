@@ -247,7 +247,7 @@ def main():
                 "epoch": epoch,
                 "val_mae": val_mae,
             }, output_dir / "best.pt")
-            print(f"  → Saved best model (MAE: {val_mae:.4f})")
+            print(f"  -> Saved best model (MAE: {val_mae:.4f})")
     
     print("\n" + "=" * 60)
     print(f"Training complete! Best Val MAE: {best_val_mae:.4f}")

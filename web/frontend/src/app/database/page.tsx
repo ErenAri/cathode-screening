@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import API_BASE_URL, { API_KEY } from "@/config";
+import API_BASE_URL from "@/config";
 
 interface MaterialPrediction {
     material_id: string;
@@ -110,16 +110,8 @@ export default function Database() {
     const [screening, setScreening] = useState<ScreeningProvisionalPayload | null>(null);
     const [proofError, setProofError] = useState<string | null>(null);
 
-    const headers = useMemo(() => {
-        const requestHeaders: HeadersInit = {};
-        if (API_KEY) {
-            requestHeaders["X-API-Key"] = API_KEY;
-        }
-        return requestHeaders;
-    }, []);
-
     useEffect(() => {
-        fetch(`${API_BASE_URL}/database`, { headers })
+        fetch("/api/backend/database")
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) {
@@ -134,10 +126,10 @@ export default function Database() {
                 setError("Failed to connect to server");
                 setLoading(false);
             });
-    }, [headers]);
+    }, []);
 
     useEffect(() => {
-        fetch(`${API_BASE_URL}/screening/provisional`, { headers })
+        fetch("/api/backend/screening/provisional")
             .then((res) => {
                 if (!res.ok) {
                     throw new Error(`Request failed (${res.status})`);
@@ -153,7 +145,7 @@ export default function Database() {
                 setScreeningError(err.message || "Failed to load provisional screening pack");
                 setScreeningLoading(false);
             });
-    }, [headers]);
+    }, []);
 
     useEffect(() => {
         const q = search.toLowerCase();
@@ -195,8 +187,8 @@ export default function Database() {
         try {
             const target = proof.download_url.startsWith("http")
                 ? proof.download_url
-                : `${API_BASE_URL}${proof.download_url}`;
-            const res = await fetch(target, { headers });
+                : `/api/backend${proof.download_url}`;
+            const res = await fetch(target);
             if (!res.ok) {
                 throw new Error(`Download failed (${res.status})`);
             }

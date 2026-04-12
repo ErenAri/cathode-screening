@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import API_BASE_URL, { API_KEY } from "@/config";
+import API_BASE_URL from "@/config";
 import { SocialLinks } from "@/components/SocialLinks";
 
 // --- Types ---
@@ -135,17 +135,11 @@ export default function DiscoveryPage() {
     const [newName, setNewName] = useState("");
     const [creating, setCreating] = useState(false);
 
-    const headers = useMemo(() => {
-        const h: HeadersInit = {};
-        if (API_KEY) h["X-API-Key"] = API_KEY;
-        return h;
-    }, []);
-
     // --- Fetch campaigns ---
     const refreshCampaigns = () => {
         setLoading(true);
         setError(null);
-        fetch(`${API_BASE_URL}/discovery/campaigns`, { headers })
+        fetch("/api/backend/discovery/campaigns")
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) setCampaigns(result.campaigns);
@@ -159,7 +153,7 @@ export default function DiscoveryPage() {
     };
 
     useEffect(() => {
-        fetch(`${API_BASE_URL}/discovery/campaigns`, { headers })
+        fetch("/api/backend/discovery/campaigns")
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) setCampaigns(result.campaigns);
@@ -170,13 +164,13 @@ export default function DiscoveryPage() {
                 setError("Failed to connect to server");
                 setLoading(false);
             });
-    }, [headers]);
+    }, []);
 
     // --- Fetch campaign detail ---
     const fetchDetail = useCallback((name: string) => {
         setDetailLoading(true);
         setDetailError(null);
-        fetch(`${API_BASE_URL}/discovery/campaigns/${name}`, { headers })
+        fetch(`/api/backend/discovery/campaigns/${name}`)
             .then((res) => res.json())
             .then((result) => {
                 if (result.success) {
@@ -192,14 +186,13 @@ export default function DiscoveryPage() {
                 setDetailError("Failed to connect to server");
                 setDetailLoading(false);
             });
-    }, [headers]);
+    }, []);
 
     // --- Fetch candidates ---
     const fetchCandidates = (name: string, offset: number, strategy: string) => {
         setCandidatesLoading(true);
         fetch(
-            `${API_BASE_URL}/discovery/campaigns/${name}/candidates?limit=${perPage}&offset=${offset}&strategy=${encodeURIComponent(strategy)}`,
-            { headers }
+            `/api/backend/discovery/campaigns/${name}/candidates?limit=${perPage}&offset=${offset}&strategy=${encodeURIComponent(strategy)}`
         )
             .then((res) => res.json())
             .then((result) => {
@@ -235,9 +228,9 @@ export default function DiscoveryPage() {
     const handleCreate = () => {
         if (!newName.trim()) return;
         setCreating(true);
-        fetch(`${API_BASE_URL}/discovery/campaigns`, {
+        fetch("/api/backend/discovery/campaigns", {
             method: "POST",
-            headers: { ...headers, "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: newName.trim(), ranking_strategy: rankingStrategy }),
         })
             .then((res) => res.json())
@@ -262,9 +255,8 @@ export default function DiscoveryPage() {
     const handleScreen = () => {
         if (!selected) return;
         setScreening(true);
-        fetch(`${API_BASE_URL}/discovery/campaigns/${selected}/screen?strategy=${encodeURIComponent(rankingStrategy)}`, {
+        fetch(`/api/backend/discovery/campaigns/${selected}/screen?strategy=${encodeURIComponent(rankingStrategy)}`, {
             method: "POST",
-            headers,
         })
             .then((res) => res.json())
             .then((result) => {
@@ -287,9 +279,9 @@ export default function DiscoveryPage() {
     const handleSelectBatch = () => {
         if (!selected) return;
         setSelectingBatch(true);
-        fetch(`${API_BASE_URL}/discovery/campaigns/${selected}/select`, {
+        fetch(`/api/backend/discovery/campaigns/${selected}/select`, {
             method: "POST",
-            headers: { ...headers, "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 batch_size: batchSize,
                 strategy: rankingStrategy,
@@ -318,9 +310,9 @@ export default function DiscoveryPage() {
     const handleRunAutoCycle = () => {
         if (!selected) return;
         setAutoRunning(true);
-        fetch(`${API_BASE_URL}/discovery/campaigns/${selected}/run-cycle`, {
+        fetch(`/api/backend/discovery/campaigns/${selected}/run-cycle`, {
             method: "POST",
-            headers: { ...headers, "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 batch_size: batchSize,
                 strategy: rankingStrategy,

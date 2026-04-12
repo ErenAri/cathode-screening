@@ -168,8 +168,8 @@ def decide(q10: float, q90: float, tau_keep: float, tau_kill: float) -> str:
     """
     Make decision based on calibrated quantile bounds and thresholds.
     
-    KEEP: Pessimistic bound (q90) below keep threshold → confidently stable
-    KILL: Optimistic bound (q10) above kill threshold → confidently unstable
+    KEEP: Pessimistic bound (q90) below keep threshold -> confidently stable
+    KILL: Optimistic bound (q10) above kill threshold -> confidently unstable
     MAYBE: Otherwise
     """
     if q90 < tau_keep:

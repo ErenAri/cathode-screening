@@ -102,7 +102,7 @@ def main() -> None:
 
     print(
         f"Done: {cached} cached, {skipped} skipped, {failures} failed "
-        f"→ {out_dir}  (meta: {meta_path})"
+        f"-> {out_dir}  (meta: {meta_path})"
     )
 
 

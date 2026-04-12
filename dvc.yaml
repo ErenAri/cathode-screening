@@ -31,7 +31,7 @@ stages:
       owner: data-pipeline
 
   cache_structures:
-    cmd: python scripts/02b_cache_structures.py
+    cmd: python scripts/02b_cache_structures.py --config configs/dataset_mp.yaml
     deps:
       - scripts/02b_cache_structures.py
       - data/raw/mp/raw_mp_cathodes_v1.parquet
@@ -42,7 +42,7 @@ stages:
       description: "Cache crystal structures as .npz files"
 
   build_graphs:
-    cmd: python scripts/02_build_graph_cache.py
+    cmd: python scripts/02_build_graph_cache.py --config configs/dataset_mp.yaml
     deps:
       - scripts/02_build_graph_cache.py
       - data/raw/mp/raw_mp_cathodes_v1.parquet
@@ -75,7 +75,7 @@ stages:
     cmd: >-
       python scripts/04_train_ensemble.py
       --config configs/train_mace_ehull.yaml
-      --run-id mace_ensemble_v1
+      --run-id mace_ensemble_v2
       --skip-existing
     deps:
       - scripts/04_train_ensemble.py
@@ -84,7 +84,7 @@ stages:
       - data/processed/mp/structures/
       - data/splits/mp/splits_mp_cathodes_v1_soap-loco.json
     outs:
-      - artifacts/models/mace_ensemble_v1/:
+      - artifacts/models/mace_ensemble_v2/:
           cache: true
           persist: true
     params:
@@ -101,13 +101,13 @@ stages:
   predict:
     cmd: >-
       python scripts/07_predict_ensemble.py
-      --ensemble-dir artifacts/models/mace_ensemble_v1
+      --ensemble-dir artifacts/models/mace_ensemble_v2
       --data-config configs/dataset_mp.yaml
       --split test
       --output data/predictions/ensemble_soap_loco_test.parquet
     deps:
       - scripts/07_predict_ensemble.py
-      - artifacts/models/mace_ensemble_v1/
+      - artifacts/models/mace_ensemble_v2/
       - data/processed/mp/processed_mp_cathodes_v1.parquet
       - data/splits/mp/splits_mp_cathodes_v1_soap-loco.json
     outs:
@@ -149,11 +149,11 @@ stages:
   generate_manifest:
     cmd: >-
       python scripts/08_generate_artifact_manifest.py
-      --artifact-dir artifacts/models/mace_ensemble_v1
+      --artifact-dir artifacts/models/mace_ensemble_v2
       --output data/reports/artifact_manifest.json
     deps:
       - scripts/08_generate_artifact_manifest.py
-      - artifacts/models/mace_ensemble_v1/
+      - artifacts/models/mace_ensemble_v2/
     outs:
       - data/reports/artifact_manifest.json:
           cache: false

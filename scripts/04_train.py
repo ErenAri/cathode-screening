@@ -29,7 +29,7 @@ def _model_forward(model, batch_data, model_type, debug=False):
 
 
 def _unpack_batch(batch, model_type, device):
-    """Unpack a DataLoader batch → (batch_data, y) on *device*.
+    """Unpack a DataLoader batch -> (batch_data, y) on *device*.
 
     For CGCNN: batch is (x, src, dst, e, batch_index, y)
     For MACE:  batch is (data_dict, y)
@@ -341,9 +341,9 @@ def pinball_loss(pred, target, tau):
     """
     Pinball (quantile) loss for quantile regression.
     
-    tau=0.1 → 10th percentile (optimistic)
-    tau=0.5 → median
-    tau=0.9 → 90th percentile (pessimistic)
+    tau=0.1 -> 10th percentile (optimistic)
+    tau=0.5 -> median
+    tau=0.9 -> 90th percentile (pessimistic)
     
     Loss = (tau - 1{y < pred}) * (y - pred)
     """
@@ -420,7 +420,7 @@ def compute_multi_task_loss(
     
     Why quantile regression wins:
     - No Gaussian assumption (heavy-tailed data is fine)
-    - Direct interval outputs for decisions (q90 < 0.05 → KEEP)
+    - Direct interval outputs for decisions (q90 < 0.05 -> KEEP)
     - No σ collapse / inflation issues
     - Median (q50) serves as point estimate for MAE
     """

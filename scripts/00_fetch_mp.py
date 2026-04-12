@@ -6,7 +6,10 @@ from pathlib import Path
 
 import yaml
 import pandas as pd
+from dotenv import load_dotenv
 from mp_api.client import MPRester
+
+load_dotenv()
 
 
 def load_cfg(path: str) -> dict:

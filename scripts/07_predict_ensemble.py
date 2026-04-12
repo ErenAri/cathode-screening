@@ -379,7 +379,7 @@ class OODGate:
         # Combined: max of z-scores
         z_max = max(z_comp, z_emb, z_disagree)
         
-        # Sigmoid mapping: z=0 → 0.12, z=2 → 0.5, z=4 → 0.88
+        # Sigmoid mapping: z=0 -> 0.12, z=2 -> 0.5, z=4 -> 0.88
         ood_score = 1.0 / (1.0 + np.exp(-z_max + 2.0))
         
         # Gate level
@@ -415,9 +415,9 @@ def apply_ood_gating(
     Apply OOD gating policy to modify decision.
     
     Policy:
-    - OOD → force KEEP to MAYBE (DEFER)
-    - BORDERLINE → stricter KEEP criteria
-    - IN → trust raw decision
+    - OOD -> force KEEP to MAYBE (DEFER)
+    - BORDERLINE -> stricter KEEP criteria
+    - IN -> trust raw decision
     """
     if gate_level == "OOD":
         if raw_decision == "KEEP":
