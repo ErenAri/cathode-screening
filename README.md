@@ -259,9 +259,17 @@ For production deployments:
 - Use `scripts/11_load_test_api.py` to generate baseline latency/error stats for `/predict`.
 - For Cloud Run scaling guidance, see `docs/gcp_scaling.md`.
 
-### DFT Spot Check (Quantum Espresso)
+### DFT Verification Workflow (Quantum Espresso)
 
-A small DFT audit batch is generated under `reports/dft_qe_jarvis_50_mix` to validate screening results with QE relaxations.
+A small QE audit batch is generated under `reports/dft_qe_jarvis_50_mix` for shortlist
+follow-up. Use the formal protocol in `docs/validation/DFT_verification_protocol.md` and the
+campaign checklist in `reports/dft_qe_jarvis_50_mix/verification_checklist.md` to promote a
+candidate from `ML-screened` to `QE-relaxed`, `DFT-hull-checked`, and finally
+`DFT-verified`.
+
+Current repository status: the QE audit workflow and provisional shortlist artifacts are
+tracked in version control, but that alone is not sufficient to claim `DFT-verified`
+materials.
 
 ```bash
 cd reports/dft_qe_jarvis_50_mix

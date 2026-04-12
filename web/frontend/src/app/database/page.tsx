@@ -200,7 +200,7 @@ export default function Database() {
             link.click();
             URL.revokeObjectURL(url);
         } catch (err) {
-            setProofError(err instanceof Error ? err.message : "Failed to download proof artifact");
+            setProofError(err instanceof Error ? err.message : "Failed to download evidence artifact");
         }
     };
 
@@ -362,7 +362,7 @@ export default function Database() {
                     <div className="flex items-start justify-between mb-4">
                         <div>
                             <h2 className="text-2xl font-semibold text-gray-900">Production Screening Pack</h2>
-                            <p className="text-gray-600">Provisional JARVIS-50 shortlist with explicit action gates and proof artifacts.</p>
+                            <p className="text-gray-600">Provisional JARVIS-50 shortlist with explicit action gates and evidence artifacts. DFT verification is tracked separately from ML validation.</p>
                         </div>
                     </div>
 
@@ -377,7 +377,7 @@ export default function Database() {
                                     {screening.summary_title || "Screening Decision Summary"}
                                 </p>
                                 <p className="text-sm text-amber-800 mt-1">
-                                    {screening.summary_fields.note || "Provisional status; unresolved top-20 entries must finish QE before final lock."}
+                                    {screening.summary_fields.note || "Provisional status; unresolved top-20 entries must finish QE, hull, and robustness checks before final lock."}
                                 </p>
                             </div>
 
@@ -463,7 +463,7 @@ export default function Database() {
                             </div>
 
                             <div className="border border-gray-200 rounded-lg p-4 mb-8">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Proof Metrics</h3>
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">ML Validation Metrics</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                                     <div className="border border-gray-200 rounded-lg p-4">
                                         <p className="font-medium text-gray-900 mb-2">H100 e_hull Ensemble</p>
@@ -488,7 +488,7 @@ export default function Database() {
 
                             <div className="border border-gray-200 rounded-lg overflow-hidden">
                                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                                    <h3 className="text-lg font-semibold text-gray-900">Proof Artifacts</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900">Evidence Artifacts</h3>
                                 </div>
                                 <table className="w-full text-sm">
                                     <thead className="bg-white border-b border-gray-200">
