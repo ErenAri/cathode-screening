@@ -54,6 +54,10 @@ def main() -> None:
         "formula",
         "p_stable",
         "qe_final_state_est",
+        "evidence_tier",
+        "evidence_label",
+        "evidence_blockers",
+        "evidence_next_step",
         "decision",
         "decision_reason",
     ]

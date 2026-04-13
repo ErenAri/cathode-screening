@@ -85,6 +85,30 @@ class TestResponseSchemaCompliance:
             assert "label" in strategy
             assert "description" in strategy
 
+    def test_screening_provisional_includes_evidence_schema(self, api_client):
+        resp = api_client.get("/screening/provisional")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert "evidence" in data
+        evidence = data["evidence"]
+        assert "candidate_count" in evidence
+        assert "tier_counts" in evidence
+        assert "blocker_counts" in evidence
+        assert "runtime_state_counts" in evidence
+        assert "workflow_declared" in evidence
+        assert "reference_hull_artifacts" in evidence
+        assert isinstance(data["screening"]["screen_now"], list)
+        if data["screening"]["screen_now"]:
+            row = data["screening"]["screen_now"][0]
+            assert "evidence_tier" in row
+            assert "evidence_label" in row
+            assert "evidence_blockers" in row
+            assert "evidence_next_step" in row
+            assert "runtime_state" in row
+        for row in data["screening"]["screen_now"]:
+            assert row.get("evidence_tier") not in {"", "T0"}
+
 
 class TestAPIVersioning:
     """Verify API version is exposed consistently."""

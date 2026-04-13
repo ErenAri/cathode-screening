@@ -1,0 +1,17 @@
+{
+  "blocker_counts": {
+    "missing_qe_output": 50,
+    "reported_done_missing_pw_out": 41
+  },
+  "campaign_dir": "reports\\dft_qe_jarvis_50_mix",
+  "candidate_count": 50,
+  "reference_hull_artifacts": [],
+  "runtime_state_counts": {
+    "status_done_output_missing": 41,
+    "status_timeout": 9
+  },
+  "tier_counts": {
+    "T0": 50
+  },
+  "workflow_declared": true
+}

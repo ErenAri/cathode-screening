@@ -48,6 +48,8 @@ SCREENING_PROOF_FILES: dict[str, Path] = {
     "screening_execution_must_resolve_top20": REPORTS_DIR / "screening_execution_must_resolve_top20.csv",
     "qe_final_status_estimated": REPORTS_DIR / "qe_run3_run4_run5_estimated_status.csv",
     "qe_ranked_final_estimated": REPORTS_DIR / "dft_batch_jarvis_50_mix_final_ranked_estimated.csv",
+    "dft_evidence_table": REPORTS_DIR / "dft_qe_jarvis_50_mix_evidence.csv",
+    "dft_evidence_summary": REPORTS_DIR / "dft_qe_jarvis_50_mix_evidence_summary.json",
     "grounded_win_h100_ehull_ens_v1": REPORTS_DIR / "grounded_win_h100_ehull_ens_v1.json",
     "grounded_win_oqmd_ens_v1": REPORTS_DIR / "grounded_win_oqmd_ens_v1.json",
     "grounded_win_jarvis_ens_v1": REPORTS_DIR / "grounded_win_jarvis_ens_v1.json",
@@ -1111,6 +1113,73 @@ def _proof_descriptor(proof_id: str, path: Path) -> dict:
     }
 
 
+def _split_semicolon_field(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(";") if part.strip()]
+
+
+def _normalize_evidence_summary(raw: dict, evidence_rows: list[dict[str, str]]) -> dict:
+    tier_counts = raw.get("tier_counts", {})
+    blocker_counts = raw.get("blocker_counts", {})
+    runtime_state_counts = raw.get("runtime_state_counts", {})
+    reference_hull_artifacts = raw.get("reference_hull_artifacts", [])
+
+    return {
+        "candidate_count": _to_int(raw.get("candidate_count"), default=len(evidence_rows)),
+        "tier_counts": tier_counts if isinstance(tier_counts, dict) else {},
+        "blocker_counts": blocker_counts if isinstance(blocker_counts, dict) else {},
+        "runtime_state_counts": runtime_state_counts if isinstance(runtime_state_counts, dict) else {},
+        "workflow_declared": bool(raw.get("workflow_declared", False)),
+        "reference_hull_artifacts": (
+            reference_hull_artifacts if isinstance(reference_hull_artifacts, list) else []
+        ),
+    }
+
+
+def _index_evidence_rows(rows: list[dict[str, str]]) -> dict[str, dict]:
+    evidence_by_jarvis: dict[str, dict] = {}
+    for row in rows:
+        jarvis_id = row.get("jarvis_id", "").strip()
+        if not jarvis_id:
+            continue
+        evidence_by_jarvis[jarvis_id] = {
+            "candidate_rel": row.get("candidate_rel", ""),
+            "evidence_tier": row.get("evidence_tier", ""),
+            "evidence_label": row.get("evidence_label", ""),
+            "evidence_blockers": _split_semicolon_field(row.get("blockers")),
+            "evidence_next_step": row.get("recommended_next_step", ""),
+            "has_pw_output": row.get("has_pw_output", "").strip().lower() == "true",
+            "runtime_state": row.get("runtime_state", ""),
+            "qe_status_reported": row.get("qe_status_reported", ""),
+        }
+    return evidence_by_jarvis
+
+
+def _attach_evidence(rows: list[dict[str, str]], evidence_by_jarvis: dict[str, dict]) -> list[dict]:
+    merged_rows: list[dict] = []
+    for row in rows:
+        merged = dict(row)
+        evidence = evidence_by_jarvis.get(row.get("jarvis_id", "").strip())
+        if evidence:
+            merged.update(evidence)
+        else:
+            merged.update(
+                {
+                    "candidate_rel": "",
+                    "evidence_tier": "",
+                    "evidence_label": "",
+                    "evidence_blockers": [],
+                    "evidence_next_step": "",
+                    "has_pw_output": False,
+                    "runtime_state": "",
+                    "qe_status_reported": "",
+                }
+            )
+        merged_rows.append(merged)
+    return merged_rows
+
+
 @app.get("/metrics")
 async def get_metrics(api_key: str = Security(get_api_key)):
     """Return in-memory metrics for monitoring and drift checks."""
@@ -1187,6 +1256,12 @@ async def get_screening_provisional(api_key: str = Security(get_api_key)):
     must_resolve_rows = _read_csv_rows(
         SCREENING_PROOF_FILES["screening_execution_must_resolve_top20"]
     )
+    evidence_rows = _read_csv_rows(SCREENING_PROOF_FILES["dft_evidence_table"])
+    evidence_summary = _normalize_evidence_summary(
+        _read_json_dict(SCREENING_PROOF_FILES["dft_evidence_summary"]),
+        evidence_rows,
+    )
+    evidence_by_jarvis = _index_evidence_rows(evidence_rows)
 
     if not decision_rows and not compact_rows:
         raise HTTPException(
@@ -1218,6 +1293,10 @@ async def get_screening_provisional(api_key: str = Security(get_api_key)):
             for row in compact_rows
             if row.get("action", "").strip().lower() == "resolve_qe_first"
         ]
+
+    compact_rows = _attach_evidence(compact_rows, evidence_by_jarvis)
+    accept_rows = _attach_evidence(accept_rows, evidence_by_jarvis)
+    must_resolve_rows = _attach_evidence(must_resolve_rows, evidence_by_jarvis)
 
     proofs = [
         _proof_descriptor(proof_id, path)
@@ -1255,6 +1334,7 @@ async def get_screening_provisional(api_key: str = Security(get_api_key)):
             "resolve_qe_first": must_resolve_rows,
             "compact": compact_rows,
         },
+        "evidence": evidence_summary,
         "grounded_win": grounded_win,
         "proofs": proofs,
     }

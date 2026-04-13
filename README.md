@@ -283,10 +283,20 @@ JOBS=4 MPI_PROCS=2 PW_CMD=pw.x bash run_all_qe_parallel.sh
 
 # Slurm
 sbatch submit_slurm_array.sh
+
+# Sync finished QE outputs from scratch space or GCS into the committed campaign
+python ../../scripts/51_sync_qe_outputs.py --source-dir /path/to/qe_outputs
+
+# Assign evidence tiers after outputs or status snapshots are available
+python ../../scripts/50_assign_dft_evidence.py
 ```
 
 Pseudopotentials (SSSP 1.3.0 PBE precision) live in `reports/dft_qe_jarvis_50_mix/pseudos`, and the max cutoffs are recorded in `reports/dft_qe_jarvis_50_mix/settings.json`.
 Large QE outputs are ignored in `.gitignore` so only inputs and metadata stay in version control.
+The evidence audit writes `reports/dft_qe_jarvis_50_mix_evidence.csv` and
+`reports/dft_qe_jarvis_50_mix_evidence_summary.json`.
+The sync step imports `pw.out` and `pw.err` into each candidate directory and reruns the
+evidence audit automatically.
 
 ---
 

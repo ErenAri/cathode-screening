@@ -22,6 +22,12 @@ interface ScreeningExecutionRow {
     decision: string;
     decision_reason: string;
     action?: string;
+    evidence_tier?: string;
+    evidence_label?: string;
+    evidence_blockers?: string[];
+    evidence_next_step?: string;
+    has_pw_output?: boolean;
+    runtime_state?: string;
 }
 
 interface ProofArtifact {
@@ -54,6 +60,14 @@ interface ScreeningProvisionalPayload {
         resolve_qe_first: ScreeningExecutionRow[];
         compact: ScreeningExecutionRow[];
     };
+    evidence: {
+        candidate_count: number;
+        tier_counts: Record<string, number>;
+        blocker_counts: Record<string, number>;
+        runtime_state_counts: Record<string, number>;
+        workflow_declared: boolean;
+        reference_hull_artifacts: string[];
+    };
     grounded_win: {
         h100_ehull_ens_v1: GroundedWinMetrics;
         oqmd_ens_v1: GroundedWinMetrics;
@@ -70,9 +84,20 @@ const PROOF_LABELS: Record<string, string> = {
     screening_execution_must_resolve_top20: "Execution List (Resolve QE First)",
     qe_final_status_estimated: "QE Final Status (Estimated)",
     qe_ranked_final_estimated: "QE Ranked Candidates (Estimated)",
+    dft_evidence_table: "DFT Evidence Table",
+    dft_evidence_summary: "DFT Evidence Summary",
     grounded_win_h100_ehull_ens_v1: "Grounded Win (H100 e_hull ensemble)",
     grounded_win_oqmd_ens_v1: "Grounded Win (OQMD ensemble)",
     grounded_win_jarvis_ens_v1: "Grounded Win (JARVIS ensemble)",
+};
+
+const EVIDENCE_TIER_LABELS: Record<string, string> = {
+    T0: "ML-screened",
+    T1: "QE-relaxed",
+    T2: "DFT-hull-checked",
+    T3: "DFT-verified",
+    T4: "Phonon-screened",
+    T5: "Experimentally supported",
 };
 
 function formatProbability(value: string): string {
@@ -94,6 +119,31 @@ function formatBytes(size: number | null): string {
         return `${(size / 1024).toFixed(1)} KB`;
     }
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function evidenceBadgeClass(tier?: string): string {
+    switch (tier) {
+        case "T1":
+            return "bg-blue-100 text-blue-800";
+        case "T2":
+            return "bg-cyan-100 text-cyan-800";
+        case "T3":
+            return "bg-green-100 text-green-800";
+        case "T4":
+            return "bg-emerald-100 text-emerald-800";
+        case "T5":
+            return "bg-violet-100 text-violet-800";
+        default:
+            return "bg-amber-100 text-amber-800";
+    }
+}
+
+function evidenceLabel(row: ScreeningExecutionRow): string {
+    return row.evidence_label || (row.evidence_tier ? EVIDENCE_TIER_LABELS[row.evidence_tier] : "") || "-";
+}
+
+function topBlocker(row: ScreeningExecutionRow): string {
+    return row.evidence_blockers && row.evidence_blockers.length > 0 ? row.evidence_blockers[0] : "-";
 }
 
 export default function Database() {
@@ -404,6 +454,58 @@ export default function Database() {
                                 </div>
                             </div>
 
+                            <div className="border border-gray-200 rounded-lg p-4 mb-8">
+                                <div className="flex items-start justify-between gap-6 mb-4">
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-900">DFT Evidence Audit</h3>
+                                        <p className="text-sm text-gray-600 mt-1">
+                                            Candidate evidence is tracked separately from ML ranking so a completed-looking QE status cannot be mistaken for verification.
+                                        </p>
+                                    </div>
+                                    <div className="text-sm text-gray-600">
+                                        <p>Accept threshold: <span className="font-medium text-gray-900">{screening.summary_fields.min_accept_tier || "T1"}</span></p>
+                                        <p>Workflow declared: <span className={screening.evidence.workflow_declared ? "text-green-700 font-medium" : "text-red-700 font-medium"}>{screening.evidence.workflow_declared ? "yes" : "no"}</span></p>
+                                        <p>Reference hull artifacts: <span className="font-medium text-gray-900">{screening.evidence.reference_hull_artifacts.length}</span></p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                                    <div className="border border-amber-200 rounded-lg p-4">
+                                        <p className="text-2xl font-semibold text-amber-700">{screening.evidence.tier_counts.T0 || 0}</p>
+                                        <p className="text-gray-500">ML-screened</p>
+                                    </div>
+                                    <div className="border border-blue-200 rounded-lg p-4">
+                                        <p className="text-2xl font-semibold text-blue-700">{screening.evidence.tier_counts.T1 || 0}</p>
+                                        <p className="text-gray-500">QE-relaxed</p>
+                                    </div>
+                                    <div className="border border-cyan-200 rounded-lg p-4">
+                                        <p className="text-2xl font-semibold text-cyan-700">{screening.evidence.tier_counts.T2 || 0}</p>
+                                        <p className="text-gray-500">Hull-checked</p>
+                                    </div>
+                                    <div className="border border-green-200 rounded-lg p-4">
+                                        <p className="text-2xl font-semibold text-green-700">{(screening.evidence.tier_counts.T3 || 0) + (screening.evidence.tier_counts.T4 || 0) + (screening.evidence.tier_counts.T5 || 0)}</p>
+                                        <p className="text-gray-500">Verified or better</p>
+                                    </div>
+                                    <div className="border border-red-200 rounded-lg p-4">
+                                        <p className="text-2xl font-semibold text-red-700">{screening.evidence.blocker_counts.reported_done_missing_pw_out || 0}</p>
+                                        <p className="text-gray-500">Done without `pw.out`</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mt-4">
+                                    <div className="border border-gray-200 rounded-lg p-4">
+                                        <p className="font-medium text-gray-900">Runtime State</p>
+                                        <p className="text-gray-700 mt-2">Prepared only: {screening.evidence.runtime_state_counts.prepared_only || 0}</p>
+                                        <p className="text-gray-700">Status says done, outputs missing: {screening.evidence.runtime_state_counts.status_done_output_missing || 0}</p>
+                                        <p className="text-gray-700">Timeout: {screening.evidence.runtime_state_counts.status_timeout || 0}</p>
+                                    </div>
+                                    <div className="border border-gray-200 rounded-lg p-4 md:col-span-2">
+                                        <p className="font-medium text-gray-900">Interpretation</p>
+                                        <p className="text-gray-700 mt-2">
+                                            This campaign currently contains input decks and empty QE work directories, but no committed <span className="font-mono">pw.out</span> files. That means calculations may be queued or running elsewhere, yet the repository still has no first-principles output to verify.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                                     <div className="px-4 py-3 bg-green-50 border-b border-gray-200">
@@ -417,17 +519,32 @@ export default function Database() {
                                                     <th className="px-3 py-2 text-left font-medium text-gray-600">JARVIS ID</th>
                                                     <th className="px-3 py-2 text-left font-medium text-gray-600">Formula</th>
                                                     <th className="px-3 py-2 text-right font-medium text-gray-600">P(Stable)</th>
+                                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Evidence</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {screening.screening.screen_now.map((row, idx) => (
-                                                    <tr key={`${row.jarvis_id}-${idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                                                        <td className="px-3 py-2 font-mono text-gray-700">{row.rank}</td>
-                                                        <td className="px-3 py-2 font-mono text-blue-700">{row.jarvis_id}</td>
-                                                        <td className="px-3 py-2 text-gray-900">{row.formula || "-"}</td>
-                                                        <td className="px-3 py-2 text-right text-gray-800">{formatProbability(row.p_stable)}</td>
+                                                {screening.screening.screen_now.length > 0 ? (
+                                                    screening.screening.screen_now.map((row, idx) => (
+                                                        <tr key={`${row.jarvis_id}-${idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                                                            <td className="px-3 py-2 font-mono text-gray-700">{row.rank}</td>
+                                                            <td className="px-3 py-2 font-mono text-blue-700">{row.jarvis_id}</td>
+                                                            <td className="px-3 py-2 text-gray-900">{row.formula || "-"}</td>
+                                                            <td className="px-3 py-2 text-right text-gray-800">{formatProbability(row.p_stable)}</td>
+                                                            <td className="px-3 py-2">
+                                                                <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${evidenceBadgeClass(row.evidence_tier)}`}>
+                                                                    {evidenceLabel(row)}
+                                                                </span>
+                                                                <p className="text-xs text-gray-500 mt-1">{topBlocker(row)}</p>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr className="bg-white">
+                                                        <td colSpan={5} className="px-3 py-6 text-sm text-gray-500">
+                                                            No candidates currently meet the evidence threshold for <span className="font-mono">screen_now</span>. Sync QE outputs and rerun the evidence audit to promote candidates beyond <span className="font-mono">T0</span>.
+                                                        </td>
                                                     </tr>
-                                                ))}
+                                                )}
                                             </tbody>
                                         </table>
                                     </div>
@@ -444,6 +561,7 @@ export default function Database() {
                                                     <th className="px-3 py-2 text-left font-medium text-gray-600">Rank</th>
                                                     <th className="px-3 py-2 text-left font-medium text-gray-600">JARVIS ID</th>
                                                     <th className="px-3 py-2 text-left font-medium text-gray-600">QE State</th>
+                                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Evidence</th>
                                                     <th className="px-3 py-2 text-left font-medium text-gray-600">Reason</th>
                                                 </tr>
                                             </thead>
@@ -453,6 +571,12 @@ export default function Database() {
                                                         <td className="px-3 py-2 font-mono text-gray-700">{row.rank}</td>
                                                         <td className="px-3 py-2 font-mono text-blue-700">{row.jarvis_id}</td>
                                                         <td className="px-3 py-2 text-gray-800">{row.qe_final_state_est || "-"}</td>
+                                                        <td className="px-3 py-2">
+                                                            <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${evidenceBadgeClass(row.evidence_tier)}`}>
+                                                                {evidenceLabel(row)}
+                                                            </span>
+                                                            <p className="text-xs text-gray-500 mt-1">{topBlocker(row)}</p>
+                                                        </td>
                                                         <td className="px-3 py-2 text-gray-800">{row.decision_reason || "-"}</td>
                                                     </tr>
                                                 ))}
