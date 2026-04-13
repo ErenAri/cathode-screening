@@ -1,0 +1,21 @@
+rank,jarvis_id,formula,p_stable,qe_final_state_est,evidence_tier,evidence_label,evidence_blockers,evidence_next_step,decision,decision_reason
+1,JVASP-11719,LiCo(CO)4,0.9999999501225023,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+2,JVASP-135344,LiTiO,0.9995801746003865,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+3,JVASP-135345,LiTiO,0.995924372947206,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+4,JVASP-102099,Li2Ti2Sb2O,0.995122381154934,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+5,JVASP-10213,Li2ZnGeO4,0.8021875544196649,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+6,JVASP-119494,LiCuRu2(RhO4)2,0.7447604505037791,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+7,JVASP-139780,LiMnRhO4,0.7209135520526624,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+8,JVASP-154550,LiFeMoClO4,0.7025978713440383,done,T0,ML-screened,missing_qe_output,Run QE relaxations and store pw.out/pw.err in the candidate directory.,hold,top20_missing_evidence
+9,JVASP-11782,Rb2LiVO4,0.6963208969701723,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+10,JVASP-142245,LiEr(WO4)2,0.6935995268853473,done,T0,ML-screened,missing_qe_output,Run QE relaxations and store pw.out/pw.err in the candidate directory.,hold,top20_missing_evidence
+11,JVASP-111744,LiEu(WO4)2,0.6915955585917728,done,T0,ML-screened,missing_qe_output,Run QE relaxations and store pw.out/pw.err in the candidate directory.,hold,top20_missing_evidence
+12,JVASP-57404,K2LiVO4,0.6823597235195598,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+13,JVASP-121704,K2LiVO4,0.6822429764794545,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+14,JVASP-22879,Li2ZnSiO4,0.6766647577566721,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+15,JVASP-48629,LiCoCuO4,0.6759128600219035,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+16,JVASP-88720,K11LiMn4O16,0.6751677857127019,timeout,T0,ML-screened,missing_qe_output,Run QE relaxations and store pw.out/pw.err in the candidate directory.,hold,top20_unresolved
+17,JVASP-54568,LiTl3(MoO4)2,0.6727650691009971,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+18,JVASP-133282,LiHo(WO4)2,0.6701743051035043,timeout,T0,ML-screened,missing_qe_output,Run QE relaxations and store pw.out/pw.err in the candidate directory.,hold,top20_unresolved
+19,JVASP-146723,LiCrPO4,0.6610856270794109,done,T0,ML-screened,missing_qe_output;reported_done_missing_pw_out,Sync completed QE outputs into the campaign directory.,hold,top20_missing_evidence
+20,JVASP-57362,LiGa(MoO4)2,0.6596388036786802,done,T0,ML-screened,missing_qe_output,Run QE relaxations and store pw.out/pw.err in the candidate directory.,hold,top20_missing_evidence

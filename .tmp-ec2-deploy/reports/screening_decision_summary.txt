@@ -1,0 +1,11 @@
+Screening Decision Summary (Provisional)
+input=reports\dft_batch_jarvis_50_mix_final_ranked_estimated.csv
+output=reports\screening_decision_provisional.csv
+total_candidates=50
+accept=0
+hold=20
+unknown=30
+top20_unresolved=20
+top20_missing_evidence=18
+min_accept_tier=T1
+note=Promotion to accept requires both qe_final_state_est=done and evidence tier at or above min_accept_tier. Estimated status alone is insufficient.
